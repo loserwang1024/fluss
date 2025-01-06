@@ -430,7 +430,7 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
     }
 
     @Test
-    void testGetCluster() throws Exception {
+    void testGetServerNodes() throws Exception {
         List<ServerNode> serverNodes = admin.getServerNodes().get();
         List<ServerNode> expectedNodes = new ArrayList<>();
         expectedNodes.add(FLUSS_CLUSTER_EXTENSION.getCoordinatorServerNode());
