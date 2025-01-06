@@ -22,6 +22,7 @@ import com.alibaba.fluss.client.table.snapshot.KvSnapshotInfo;
 import com.alibaba.fluss.client.table.snapshot.PartitionSnapshotInfo;
 import com.alibaba.fluss.client.utils.ClientRpcMessageUtils;
 import com.alibaba.fluss.cluster.Cluster;
+import com.alibaba.fluss.cluster.ServerNode;
 import com.alibaba.fluss.lakehouse.LakeStorageInfo;
 import com.alibaba.fluss.metadata.PartitionInfo;
 import com.alibaba.fluss.metadata.PhysicalTablePath;
@@ -66,7 +67,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -93,23 +93,23 @@ public class FlussAdmin implements Admin {
     }
 
     @Override
-    public CompletableFuture<Cluster> getCluster(
-            @Nullable Set<TablePath> tablePaths,
-            @Nullable Collection<PhysicalTablePath> tablePartitions,
-            @Nullable Collection<Long> tablePartitionIds) {
-        CompletableFuture<Cluster> future = new CompletableFuture<>();
+    public CompletableFuture<List<ServerNode>> getServerNodes() {
+        CompletableFuture<List<ServerNode>> future = new CompletableFuture<>();
         CompletableFuture.runAsync(
                 () -> {
                     try {
+                        List<ServerNode> serverNodeList = new ArrayList<>();
                         Cluster cluster =
                                 sendMetadataRequestAndRebuildCluster(
                                         gateway,
                                         false,
                                         metadataUpdater.getCluster(),
-                                        tablePaths,
-                                        tablePartitions,
-                                        tablePartitionIds);
-                        future.complete(cluster);
+                                        null,
+                                        null,
+                                        null);
+                        serverNodeList.add(cluster.getCoordinatorServer());
+                        serverNodeList.addAll(cluster.getAliveTabletServerList());
+                        future.complete(serverNodeList);
                     } catch (Throwable t) {
                         future.completeExceptionally(t);
                     }

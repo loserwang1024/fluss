@@ -21,7 +21,7 @@ import com.alibaba.fluss.client.table.snapshot.BucketSnapshotInfo;
 import com.alibaba.fluss.client.table.snapshot.BucketsSnapshotInfo;
 import com.alibaba.fluss.client.table.snapshot.KvSnapshotInfo;
 import com.alibaba.fluss.client.table.writer.UpsertWriter;
-import com.alibaba.fluss.cluster.Cluster;
+import com.alibaba.fluss.cluster.ServerNode;
 import com.alibaba.fluss.config.AutoPartitionTimeUnit;
 import com.alibaba.fluss.config.ConfigOptions;
 import com.alibaba.fluss.exception.DatabaseAlreadyExistException;
@@ -52,7 +52,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -431,27 +431,11 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
 
     @Test
     void testGetCluster() throws Exception {
-        Cluster cluster = admin.getCluster(null, null, null).get();
-        assertThat(cluster.getCoordinatorServer())
-                .isEqualTo(FLUSS_CLUSTER_EXTENSION.getCoordinatorServerNode());
-        assertThat(cluster.getAliveTabletServerList())
-                .containsExactlyInAnyOrderElementsOf(
-                        FLUSS_CLUSTER_EXTENSION.getTabletServerNodes());
-        assertThat(cluster.getTable(DEFAULT_TABLE_PATH)).isNotPresent();
-
-        cluster = admin.getCluster(Collections.singleton(DEFAULT_TABLE_PATH), null, null).get();
-        assertThat(cluster.getCoordinatorServer())
-                .isEqualTo(FLUSS_CLUSTER_EXTENSION.getCoordinatorServerNode());
-        assertThat(cluster.getAliveTabletServerList())
-                .containsExactlyInAnyOrderElementsOf(
-                        FLUSS_CLUSTER_EXTENSION.getTabletServerNodes());
-        assertThat(cluster.getTable(DEFAULT_TABLE_PATH)).isPresent();
-        assertThat(cluster.getBucketCount(DEFAULT_TABLE_PATH))
-                .isEqualTo(
-                        DEFAULT_TABLE_DESCRIPTOR
-                                .getTableDistribution()
-                                .flatMap(TableDescriptor.TableDistribution::getBucketCount)
-                                .orElse(0));
+        List<ServerNode> serverNodes = admin.getServerNodes().get();
+        List<ServerNode> expectedNodes = new ArrayList<>();
+        expectedNodes.add(FLUSS_CLUSTER_EXTENSION.getCoordinatorServerNode());
+        expectedNodes.addAll(FLUSS_CLUSTER_EXTENSION.getTabletServerNodes());
+        assertThat(serverNodes).isEqualTo(expectedNodes);
     }
 
     private void assertHasTabletServerNumber(int tabletServerNumber) {
