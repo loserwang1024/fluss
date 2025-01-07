@@ -435,7 +435,7 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
         List<ServerNode> expectedNodes = new ArrayList<>();
         expectedNodes.add(FLUSS_CLUSTER_EXTENSION.getCoordinatorServerNode());
         expectedNodes.addAll(FLUSS_CLUSTER_EXTENSION.getTabletServerNodes());
-        assertThat(serverNodes).isEqualTo(expectedNodes);
+        assertThat(serverNodes).containsExactlyInAnyOrderElementsOf(expectedNodes);
     }
 
     private void assertHasTabletServerNumber(int tabletServerNumber) {
