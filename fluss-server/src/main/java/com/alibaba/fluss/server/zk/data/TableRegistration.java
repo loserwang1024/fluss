@@ -42,6 +42,8 @@ public class TableRegistration {
     public final @Nullable TableDescriptor.TableDistribution tableDistribution;
     public final Map<String, String> properties;
     public final Map<String, String> customProperties;
+    public final long createdTime;
+    public final long modifiedTime;
 
     public TableRegistration(
             long tableId,
@@ -49,13 +51,17 @@ public class TableRegistration {
             List<String> partitionKeys,
             @Nullable TableDescriptor.TableDistribution tableDistribution,
             Map<String, String> properties,
-            Map<String, String> customProperties) {
+            Map<String, String> customProperties,
+            long createdTime,
+            long modifiedTime) {
         this.tableId = tableId;
         this.comment = comment;
         this.partitionKeys = partitionKeys;
         this.tableDistribution = tableDistribution;
         this.properties = properties;
         this.customProperties = customProperties;
+        this.createdTime = createdTime;
+        this.modifiedTime = modifiedTime;
     }
 
     public TableDescriptor toTableDescriptor(Schema schema) {
@@ -81,7 +87,9 @@ public class TableRegistration {
                 tableDescriptor.getPartitionKeys(),
                 tableDescriptor.getTableDistribution().orElse(null),
                 tableDescriptor.getProperties(),
-                tableDescriptor.getCustomProperties());
+                tableDescriptor.getCustomProperties(),
+                System.currentTimeMillis(),
+                System.currentTimeMillis());
     }
 
     @Override
@@ -89,11 +97,14 @@ public class TableRegistration {
         if (this == o) {
             return true;
         }
+
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
         TableRegistration that = (TableRegistration) o;
         return tableId == that.tableId
+                && createdTime == that.createdTime
+                && modifiedTime == that.modifiedTime
                 && Objects.equals(comment, that.comment)
                 && Objects.equals(partitionKeys, that.partitionKeys)
                 && Objects.equals(tableDistribution, that.tableDistribution)
@@ -104,7 +115,14 @@ public class TableRegistration {
     @Override
     public int hashCode() {
         return Objects.hash(
-                tableId, comment, partitionKeys, tableDistribution, properties, customProperties);
+                tableId,
+                comment,
+                partitionKeys,
+                tableDistribution,
+                properties,
+                customProperties,
+                createdTime,
+                modifiedTime);
     }
 
     @Override
@@ -123,6 +141,10 @@ public class TableRegistration {
                 + properties
                 + ", customProperties="
                 + customProperties
+                + ", createdTime="
+                + createdTime
+                + ", modifiedTime="
+                + modifiedTime
                 + '}';
     }
 }

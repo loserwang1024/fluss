@@ -324,7 +324,14 @@ class AutoPartitionManagerTest {
                         .property(ConfigOptions.TABLE_AUTO_PARTITION_NUM_RETENTION, 2)
                         .property(ConfigOptions.TABLE_AUTO_PARTITION_NUM_PRECREATE, 4)
                         .build();
-        TableInfo tableInfo = new TableInfo(tablePath, tableId, descriptor, 1);
+        TableInfo tableInfo =
+                new TableInfo(
+                        tablePath,
+                        tableId,
+                        descriptor,
+                        1,
+                        System.currentTimeMillis(),
+                        System.currentTimeMillis());
         TableRegistration registration = TableRegistration.of(tableId, descriptor);
         zookeeperClient.registerTable(tablePath, registration);
         return tableInfo;
