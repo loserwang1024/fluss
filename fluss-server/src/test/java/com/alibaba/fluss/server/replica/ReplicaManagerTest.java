@@ -58,8 +58,6 @@ import com.alibaba.fluss.utils.types.Tuple2;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
@@ -102,8 +100,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Test for {@link ReplicaManager}. */
 class ReplicaManagerTest extends ReplicaTestBase {
-
-    private static final Logger log = LoggerFactory.getLogger(ReplicaManagerTest.class);
 
     @Test
     void testProduceLog() throws Exception {
@@ -884,13 +880,6 @@ class ReplicaManagerTest extends ReplicaTestBase {
                             -1, ListOffsetsParam.TIMESTAMP_OFFSET_TYPE, commitTimestamp),
                     Collections.singleton(tb),
                     future1::complete);
-            List<ListOffsetsResultForBucket> listOffsetsResultForBuckets = future1.get();
-            for (ListOffsetsResultForBucket result : listOffsetsResultForBuckets) {
-                if (result.getErrorCode() != 0) {
-                    log.warn(result.getErrorMessage() + "," + result.getErrorCode());
-                }
-            }
-
             assertThat(future1.get()).containsOnly(new ListOffsetsResultForBucket(tb, baseOffset));
         }
 

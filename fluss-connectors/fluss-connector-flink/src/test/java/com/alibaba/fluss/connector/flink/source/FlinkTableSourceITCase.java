@@ -32,8 +32,6 @@ import org.apache.commons.lang3.RandomUtils;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.api.java.typeutils.RowTypeInfo;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.configuration.RestartStrategyOptions;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.DataTypes;
@@ -86,14 +84,7 @@ class FlinkTableSourceITCase extends FlinkTestBase {
         FlinkTestBase.beforeAll();
 
         String bootstrapServers = String.join(",", clientConf.get(ConfigOptions.BOOTSTRAP_SERVERS));
-        execEnv =
-                StreamExecutionEnvironment.getExecutionEnvironment(
-                        new Configuration()
-                                .set(
-                                        RestartStrategyOptions.RESTART_STRATEGY,
-                                        RestartStrategyOptions.RestartStrategyType
-                                                .NO_RESTART_STRATEGY
-                                                .getMainValue()));
+        execEnv = StreamExecutionEnvironment.getExecutionEnvironment();
         // create table environment
         tEnv = StreamTableEnvironment.create(execEnv, EnvironmentSettings.inStreamingMode());
         // crate catalog using sql
