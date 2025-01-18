@@ -231,8 +231,8 @@ public class FlussAdmin implements Admin {
                                         r.getTableId(),
                                         TableDescriptor.fromJsonBytes(r.getTableJson()),
                                         r.getSchemaId(),
-                                        r.hasCreatedTime() ? r.getCreatedTime() : -1,
-                                        r.hasModifiedTime() ? r.getModifiedTime() : -1));
+                                        r.getCreatedTime(),
+                                        r.getModifiedTime()));
     }
 
     @Override

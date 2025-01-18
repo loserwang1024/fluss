@@ -80,7 +80,8 @@ public class TableRegistration {
         return builder.build();
     }
 
-    public static TableRegistration of(long tableId, TableDescriptor tableDescriptor) {
+    public static TableRegistration newTable(long tableId, TableDescriptor tableDescriptor) {
+        long now = System.currentTimeMillis();
         return new TableRegistration(
                 tableId,
                 tableDescriptor.getComment().orElse(null),
@@ -88,8 +89,8 @@ public class TableRegistration {
                 tableDescriptor.getTableDistribution().orElse(null),
                 tableDescriptor.getProperties(),
                 tableDescriptor.getCustomProperties(),
-                System.currentTimeMillis(),
-                System.currentTimeMillis());
+                now,
+                now);
     }
 
     @Override

@@ -332,7 +332,7 @@ class AutoPartitionManagerTest {
                         1,
                         System.currentTimeMillis(),
                         System.currentTimeMillis());
-        TableRegistration registration = TableRegistration.of(tableId, descriptor);
+        TableRegistration registration = TableRegistration.newTable(tableId, descriptor);
         zookeeperClient.registerTable(tablePath, registration);
         return tableInfo;
     }

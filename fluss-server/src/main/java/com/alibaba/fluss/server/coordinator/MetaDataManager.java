@@ -236,7 +236,7 @@ public class MetaDataManager {
                     }
                     // register the table
                     zookeeperClient.registerTable(
-                            tablePath, TableRegistration.of(tableId, tableDescriptor), false);
+                            tablePath, TableRegistration.newTable(tableId, tableDescriptor), false);
                     return tableId;
                 },
                 "Fail to create table " + tablePath);

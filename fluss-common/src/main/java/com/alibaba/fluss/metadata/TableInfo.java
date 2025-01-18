@@ -96,18 +96,24 @@ public final class TableInfo {
 
     @Override
     public int hashCode() {
-        return Objects.hash(tablePath, tableDescriptor, tableId, schemaId, createdTime, modifiedTime);
+        return Objects.hash(tablePath, tableDescriptor, tableId, schemaId);
     }
 
     @Override
     public String toString() {
-        return "TableInfo{" +
-                "tablePath=" + tablePath +
-                ", tableDescriptor=" + tableDescriptor +
-                ", tableId=" + tableId +
-                ", schemaId=" + schemaId +
-                ", createdTime=" + createdTime +
-                ", modifiedTime=" + modifiedTime +
-                '}';
+        return "TableInfo{"
+                + "tablePath="
+                + tablePath
+                + ", tableDescriptor="
+                + tableDescriptor
+                + ", tableId="
+                + tableId
+                + ", schemaId="
+                + schemaId
+                + ", createdTime="
+                + createdTime
+                + ", modifiedTime="
+                + modifiedTime
+                + '}';
     }
 }

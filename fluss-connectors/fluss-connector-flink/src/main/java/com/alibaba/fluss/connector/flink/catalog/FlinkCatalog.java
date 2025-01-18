@@ -150,9 +150,7 @@ public class FlinkCatalog implements Catalog {
                     admin.getDatabase(databaseName).get().getDatabaseDescriptor();
             return new CatalogDatabaseImpl(
                     databaseDescriptor.getCustomProperties(),
-                    databaseDescriptor.getComment().isPresent()
-                            ? databaseDescriptor.getComment().get()
-                            : null);
+                    databaseDescriptor.getComment().orElse(null));
         } catch (Exception e) {
             throw new CatalogException(
                     String.format("Failed to get database %s in %s", databaseName, getName()),

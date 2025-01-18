@@ -211,11 +211,11 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
         GetTableResponse response = new GetTableResponse();
         TablePath tablePath = toTablePath(request.getTablePath());
         TableInfo tableInfo = metadataManager.getTable(tablePath);
-        response.setTableJson(tableInfo.getTableDescriptor().toJsonBytes());
-        response.setSchemaId(tableInfo.getSchemaId());
-        response.setTableId(tableInfo.getTableId());
-        response.setCreatedTime(tableInfo.getCreatedTime());
-        response.setModifiedTime(tableInfo.getModifiedTime());
+        response.setTableJson(tableInfo.getTableDescriptor().toJsonBytes())
+                .setSchemaId(tableInfo.getSchemaId())
+                .setTableId(tableInfo.getTableId())
+                .setCreatedTime(tableInfo.getCreatedTime())
+                .setModifiedTime(tableInfo.getModifiedTime());
         return CompletableFuture.completedFuture(response);
     }
 
