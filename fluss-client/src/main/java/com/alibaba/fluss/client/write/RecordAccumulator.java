@@ -130,7 +130,7 @@ public final class RecordAccumulator {
                 Math.max(1, (int) conf.get(ConfigOptions.CLIENT_WRITER_BATCH_SIZE).getBytes());
 
         this.writerBufferPool = LazyMemorySegmentPool.createWriterBufferPool(conf);
-        this.pagesPerBatch = Math.max(1, batchSize / writerBufferPool.pageSize());
+        this.pagesPerBatch = Math.max(1, MathUtils.ceilDiv(batchSize, writerBufferPool.pageSize()));
         this.bufferAllocator = new RootAllocator(Long.MAX_VALUE);
         this.arrowWriterPool = new ArrowWriterPool(bufferAllocator);
         this.incomplete = new IncompleteBatches();

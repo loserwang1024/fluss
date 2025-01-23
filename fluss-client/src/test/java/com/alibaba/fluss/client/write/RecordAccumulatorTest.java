@@ -395,14 +395,12 @@ public class RecordAccumulatorTest {
 
     @Test
     public void testNextReadyCheckDelay() throws Exception {
-
         int batchTimeout = 10;
-        int batchSize = 1025;
+        int batchSize = 1024;
         IndexedRow row = row(DATA1_ROW_TYPE, new Object[] {1, "a"});
         // test case assumes that the records do not fill the batch completely
         RecordAccumulator accum =
-                createTestRecordAccumulator(
-                        batchTimeout, batchSize + RECORD_BATCH_HEADER_SIZE, 256, 10 * batchSize);
+                createTestRecordAccumulator(batchTimeout, batchSize, 256, 10 * batchSize);
         // Just short of going over the limit so we trigger linger time
         int appends = expectedNumAppends(row, batchSize);
 
@@ -424,12 +422,12 @@ public class RecordAccumulatorTest {
         assertThat(result.readyNodes).hasSize(0);
         assertThat(result.nextReadyCheckDelayMs).isEqualTo(batchTimeout / 2);
 
-        // Add data for bucket1, enough to make data sendable immediately
-        for (int i = 0; i < appends + 1; i++) {
-            accum.append(createRecord(row), writeCallback, cluster, bucket1.getBucketId(), true);
-        }
+        // Append one more data for bucket1 should make the batch full and sendable immediately
+        accum.append(createRecord(row), writeCallback, cluster, bucket1.getBucketId(), false);
+
         result = accum.ready(cluster);
-        assertThat(result.readyNodes).hasSize(1);
+        // server for bucket1 should be ready now
+        assertThat(result.readyNodes).hasSize(1).contains(node1);
         // Note this can actually be < batchTimeout because it may use delays from bucket that
         // aren't sendable
         // but have leaders with other sendable data.

@@ -205,6 +205,7 @@ public class Sender implements Runnable {
             // TODO The method sendWriteData is in a busy loop. If there is no data continuously, it
             // will cause the CPU to be occupied.
             // In the future, we need to introduce delay logic to deal with it.
+            // TODO: condition waiter
             Thread.sleep(readyCheckResult.nextReadyCheckDelayMs);
         }
 
