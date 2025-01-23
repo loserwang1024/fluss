@@ -152,7 +152,7 @@ public class RecordAccumulatorTest {
     @Test
     void testFull() throws Exception {
         // test case assumes that the records do not fill the batch completely
-        int batchSize = 1025;
+        int batchSize = 1024;
         IndexedRow row = row(DATA1_ROW_TYPE, new Object[] {1, "a"});
 
         RecordAccumulator accum = createTestRecordAccumulator(batchSize, 10L * batchSize);
