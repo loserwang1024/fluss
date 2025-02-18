@@ -49,6 +49,7 @@ import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import static com.alibaba.fluss.connector.flink.catalog.FlinkCatalog.LAKE_TABLE_SPLITTER;
@@ -200,6 +201,15 @@ public class FlinkTableFactory implements DynamicTableSourceFactory, DynamicTabl
                 flussConfig.setString(option.key(), tableOptions.get(option).toString());
             }
         }
+
+        Map<String, String> options = tableOptions.toMap();
+        // todo: toFlussClientConfig
+        options.forEach(
+                (key, value) -> {
+                    if (key.startsWith("client.security.")) {
+                        flussConfig.setString(key, value);
+                    }
+                });
 
         // pass flink io tmp dir to fluss client.
         flussConfig.setString(

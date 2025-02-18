@@ -117,6 +117,9 @@ public class CoordinatorServer extends ServerBase {
     }
 
     public static void main(String[] args) {
+        System.out.println("-----");
+        System.out.println(args);
+        System.out.println(args.length);
         Configuration configuration =
                 loadConfiguration(args, CoordinatorServer.class.getSimpleName());
         CoordinatorServer coordinatorServer = new CoordinatorServer(configuration);

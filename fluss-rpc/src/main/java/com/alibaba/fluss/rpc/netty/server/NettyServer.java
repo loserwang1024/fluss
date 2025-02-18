@@ -16,6 +16,7 @@
 
 package com.alibaba.fluss.rpc.netty.server;
 
+import com.alibaba.fluss.annotation.VisibleForTesting;
 import com.alibaba.fluss.cluster.Endpoint;
 import com.alibaba.fluss.config.ConfigOptions;
 import com.alibaba.fluss.config.Configuration;
@@ -26,6 +27,8 @@ import com.alibaba.fluss.rpc.RpcServer;
 import com.alibaba.fluss.rpc.netty.NettyMetrics;
 import com.alibaba.fluss.rpc.netty.NettyUtils;
 import com.alibaba.fluss.rpc.protocol.ApiManager;
+import com.alibaba.fluss.security.auth.AuthenticatorLoader;
+import com.alibaba.fluss.security.auth.ServerAuthenticator;
 import com.alibaba.fluss.shaded.netty4.io.netty.bootstrap.ServerBootstrap;
 import com.alibaba.fluss.shaded.netty4.io.netty.buffer.PooledByteBufAllocator;
 import com.alibaba.fluss.shaded.netty4.io.netty.channel.AdaptiveRecvByteBufAllocator;
@@ -42,9 +45,11 @@ import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static com.alibaba.fluss.rpc.netty.NettyUtils.shutdownGroup;
@@ -116,8 +121,12 @@ public final class NettyServer implements RpcServer {
 
         // setup worker thread pool
         workerPool.start();
+
+        Map<String, Supplier<ServerAuthenticator>> authenticatorSuppliers =
+                AuthenticatorLoader.loadServerAuthenticatorSuppliers(conf, endpoints);
+
         for (Endpoint endpoint : endpoints) {
-            startEndpoint(endpoint);
+            startEndpoint(endpoint, authenticatorSuppliers.get(endpoint.getListenerName()));
         }
 
         final long duration = (System.nanoTime() - start) / 1_000_000;
@@ -135,7 +144,9 @@ public final class NettyServer implements RpcServer {
         return bindEndpoints;
     }
 
-    private void startEndpoint(Endpoint endpoint) throws IOException {
+    private void startEndpoint(
+            Endpoint endpoint, Supplier<ServerAuthenticator> authenticatorSupplier)
+            throws IOException {
 
         ServerBootstrap bootstrap = new ServerBootstrap();
 
@@ -150,10 +161,10 @@ public final class NettyServer implements RpcServer {
         // child channel pipeline for accepted connections
         bootstrap.childHandler(
                 new ServerChannelInitializer(
-                        new NettyServerHandler(
-                                workerPool.getRequestChannels(),
-                                apiManager,
-                                endpoint.getListenerName()),
+                        workerPool.getRequestChannels(),
+                        apiManager,
+                        endpoint.getListenerName(),
+                        authenticatorSupplier,
                         conf.get(ConfigOptions.NETTY_CONNECTION_MAX_IDLE_TIME).getSeconds()));
 
         // --------------------------------------------------------------------
@@ -222,5 +233,10 @@ public final class NettyServer implements RpcServer {
                 selectorShutdownFuture,
                 channelShutdownFuture,
                 workerShutdownFuture);
+    }
+
+    @VisibleForTesting
+    public ApiManager getApiManager() {
+        return apiManager;
     }
 }

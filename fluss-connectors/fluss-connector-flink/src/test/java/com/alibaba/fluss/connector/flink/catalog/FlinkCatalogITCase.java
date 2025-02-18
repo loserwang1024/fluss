@@ -75,7 +75,8 @@ class FlinkCatalogITCase {
                         CATALOG_NAME,
                         DEFAULT_DB,
                         bootstrapServers,
-                        Thread.currentThread().getContextClassLoader());
+                        Thread.currentThread().getContextClassLoader(),
+                        Collections.emptyMap());
         catalog.open();
         // create table environment
         tEnv = TableEnvironment.create(EnvironmentSettings.inStreamingMode());

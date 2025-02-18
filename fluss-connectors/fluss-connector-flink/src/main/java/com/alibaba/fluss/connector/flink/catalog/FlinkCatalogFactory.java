@@ -23,6 +23,8 @@ import org.apache.flink.table.factories.CatalogFactory;
 import org.apache.flink.table.factories.FactoryUtil;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 /** Factory for {@link FlinkCatalog}. */
@@ -49,12 +51,22 @@ public class FlinkCatalogFactory implements CatalogFactory {
     public FlinkCatalog createCatalog(Context context) {
         final FactoryUtil.CatalogFactoryHelper helper =
                 FactoryUtil.createCatalogFactoryHelper(this, context);
-        helper.validate();
+        helper.validateExcept("client.security.");
+        Map<String, String> options = context.getOptions();
+        Map<String, String> securityConfigs = new HashMap<>();
+        // todo: toFlussClientConfig
+        options.forEach(
+                (key, value) -> {
+                    if (key.startsWith("client.security.")) {
+                        securityConfigs.put(key, value);
+                    }
+                });
 
         return new FlinkCatalog(
                 context.getName(),
                 helper.getOptions().get(FlinkCatalogOptions.DEFAULT_DATABASE),
                 helper.getOptions().get(FlinkConnectorOptions.BOOTSTRAP_SERVERS),
-                context.getClassLoader());
+                context.getClassLoader(),
+                securityConfigs);
     }
 }
