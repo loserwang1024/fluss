@@ -19,10 +19,10 @@ package com.alibaba.fluss.client.admin.internal;
 import com.alibaba.fluss.annotation.Internal;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /* This file is based on source code of Apache Kafka Project (https://kafka.apache.org/), licensed by the Apache
@@ -68,7 +68,7 @@ public class AdminApiDriver<K, V> {
     public void maybeSendRequests() {
         if (!lookupKeys.isEmpty()) {
             handler.lookupStrategy()
-                    .lookup(new HashSet<>(lookupKeys))
+                    .lookup(Collections.unmodifiableSet(lookupKeys))
                     .thenAcceptAsync(
                             lookupResult -> {
                                 completeLookup(lookupResult.mappedKeys);
@@ -186,12 +186,8 @@ public class AdminApiDriver<K, V> {
             }
         }
 
-        Optional<K> getKey(V value) {
-            return Optional.ofNullable(reverseMap.get(value));
-        }
-
         Set<Map.Entry<K, Set<V>>> entrySet() {
-            return map.entrySet();
+            return Collections.unmodifiableMap(map).entrySet();
         }
     }
 }

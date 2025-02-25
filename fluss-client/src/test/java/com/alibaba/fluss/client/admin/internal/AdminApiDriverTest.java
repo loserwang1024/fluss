@@ -30,11 +30,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import static java.util.Collections.emptyMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Test for {@link AdminApiDriver} */
+/** Test for {@link AdminApiDriver}. */
 public class AdminApiDriverTest {
 
     void testNormal() throws ExecutionException, InterruptedException {
@@ -218,34 +217,5 @@ public class AdminApiDriverTest {
             expectedExceptions.put(node, exception);
             return this;
         }
-    }
-
-    private static AdminApiHandler.ApiResult<String, Long> completed(String k1, Long v1) {
-        return new AdminApiHandler.ApiResult<>(
-                Collections.singletonMap(k1, v1), emptyMap(), Collections.emptySet());
-    }
-
-    private static AdminApiHandler.ApiResult<String, Long> completed(
-            String k1, Long v1, String k2, Long v2) {
-        Map<String, Long> map = new HashMap<>();
-        map.put(k1, v1);
-        map.put(k2, v2);
-        return new AdminApiHandler.ApiResult<>(map, emptyMap(), Collections.emptySet());
-    }
-
-    private static AdminApiLookupBrokerIdStrategy.LookupBrokerIdResult<String> failedLookup(
-            String key, Throwable exception) {
-        return new AdminApiLookupBrokerIdStrategy.LookupBrokerIdResult<>(
-                emptyMap(), Collections.singletonMap(key, exception));
-    }
-
-    private static AdminApiLookupBrokerIdStrategy.LookupBrokerIdResult<String> emptyLookup() {
-        return new AdminApiLookupBrokerIdStrategy.LookupBrokerIdResult<>(emptyMap(), emptyMap());
-    }
-
-    private static AdminApiLookupBrokerIdStrategy.LookupBrokerIdResult<String> mapped(
-            String key, Integer brokerId) {
-        return new AdminApiLookupBrokerIdStrategy.LookupBrokerIdResult<>(
-                Collections.singletonMap(key, brokerId), emptyMap());
     }
 }
