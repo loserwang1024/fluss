@@ -14,18 +14,11 @@
  * limitations under the License.
  */
 
-package com.alibaba.fluss.authenticate;
+package com.alibaba.fluss.authenticate.authenticator;
 
-/** Authenticator for server side. */
-public interface ServerAuthenticator extends Authenticator {
 
-    byte[] evaluateResponse(byte[] token);
+/** Authenticator for client. */
+public interface ClientAuthenticator extends FlussAuthenticator {
 
-    /**
-     * Create principal from authenticated token for later authorization.(this can only invoke if is
-     * complete)
-     *
-     * @return
-     */
-    FlussPrincipal createPrincipal();
+    byte[] authenticate(byte[] data);
 }

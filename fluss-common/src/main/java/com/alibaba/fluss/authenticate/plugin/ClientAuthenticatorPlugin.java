@@ -16,7 +16,7 @@
 
 package com.alibaba.fluss.authenticate.plugin;
 
-import com.alibaba.fluss.authenticate.ClientAuthenticator;
+import com.alibaba.fluss.authenticate.authenticator.ClientAuthenticator;
 import com.alibaba.fluss.config.Configuration;
 
 /** Authenticator plugin for client. */

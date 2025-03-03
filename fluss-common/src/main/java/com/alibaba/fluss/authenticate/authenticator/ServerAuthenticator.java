@@ -14,17 +14,20 @@
  * limitations under the License.
  */
 
-package com.alibaba.fluss.authenticate;
+package com.alibaba.fluss.authenticate.authenticator;
 
-/** Authenticator for client. */
-public interface ClientAuthenticator extends Authenticator {
+import com.alibaba.fluss.authenticate.FlussPrincipal;
+
+/** Authenticator for server side. */
+public interface ServerAuthenticator extends FlussAuthenticator {
+
+    byte[] evaluateResponse(byte[] token);
 
     /**
-     * get the protocol name for handshake request. e.g. SASL_PLAINTEXT, SASL_SSL, PLAINTEXT.
+     * Create principal from authenticated token for later authorization.(this can only invoke if is
+     * complete)
      *
      * @return
      */
-    String getProtocol();
-
-    byte[] authenticate(byte[] data);
+    FlussPrincipal createPrincipal();
 }
