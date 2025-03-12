@@ -69,4 +69,9 @@ public class FlussPrincipal implements Principal {
     public int hashCode() {
         return Objects.hash(name, type);
     }
+
+    @Override
+    public String toString() {
+        return "FlussPrincipal{" + "name='" + name + '\'' + ", type='" + type + '\'' + '}';
+    }
 }

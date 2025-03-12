@@ -52,6 +52,7 @@ public class RequestChannelTest {
                             new EmptyByteBuf(new UnpooledByteBufAllocator(true, true)),
                             "CLIENT",
                             FlussPrincipal.ANONYMOUS,
+                            null,
                             null);
             channel.putRequest(rpcRequest);
             rpcRequests.add(rpcRequest);
@@ -73,6 +74,7 @@ public class RequestChannelTest {
                         new EmptyByteBuf(new UnpooledByteBufAllocator(true, true)),
                         "CLIENT",
                         FlussPrincipal.ANONYMOUS,
+                        null,
                         null);
         RpcRequest rpcRequest2 =
                 new RpcRequest(
@@ -84,6 +86,7 @@ public class RequestChannelTest {
                         new EmptyByteBuf(new UnpooledByteBufAllocator(true, true)),
                         "CLIENT",
                         FlussPrincipal.ANONYMOUS,
+                        null,
                         null);
         channel.putRequest(rpcRequest1);
         channel.putRequest(rpcRequest2);

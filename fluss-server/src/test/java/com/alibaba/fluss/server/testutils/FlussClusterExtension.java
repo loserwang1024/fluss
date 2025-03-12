@@ -313,8 +313,8 @@ public final class FlussClusterExtension
                 Collections.singletonList(
                         String.format(
                                 "%s:%d",
-                                getCoordinatorServerNode().host(),
-                                getCoordinatorServerNode().port())));
+                                getCoordinatorServerNode("CLIENT").host(),
+                                getCoordinatorServerNode("CLIENT").port())));
 
         // set a small memory buffer for testing.
         flussConf.set(ConfigOptions.CLIENT_WRITER_BUFFER_MEMORY_SIZE, MemorySize.parse("2mb"));
@@ -426,7 +426,11 @@ public final class FlussClusterExtension
                         ServerNode coordinatorNode =
                                 toServerNode(
                                         response.getCoordinatorServer(), ServerType.COORDINATOR);
-                        assertThat(coordinatorNode).isEqualTo(getCoordinatorServerNode());
+                        assertThat(coordinatorNode)
+                                .isEqualTo(
+                                        getCoordinatorServerNode(
+                                                clusterConf.get(
+                                                        ConfigOptions.INTERNAL_LISTENER_NAME)));
                         // check tablet server nodes
                         List<ServerNode> tsNodes =
                                 response.getTabletServersList().stream()
@@ -634,9 +638,10 @@ public final class FlussClusterExtension
 
     private List<AdminReadOnlyGateway> collectAllRpcGateways() {
         List<AdminReadOnlyGateway> rpcServiceBases = new ArrayList<>();
-        rpcServiceBases.add(newCoordinatorClient());
+        rpcServiceBases.add(
+                newCoordinatorClient(clusterConf.get(ConfigOptions.INTERNAL_LISTENER_NAME)));
         rpcServiceBases.addAll(
-                getTabletServerNodes().stream()
+                getTabletServerNodes(clusterConf.get(ConfigOptions.INTERNAL_LISTENER_NAME)).stream()
                         .map(this::newTabletServerClientForNode)
                         .collect(Collectors.toList()));
         return rpcServiceBases;

@@ -22,6 +22,8 @@ import com.alibaba.fluss.security.acl.FlussPrincipal;
 import com.alibaba.fluss.shaded.netty4.io.netty.buffer.ByteBuf;
 import com.alibaba.fluss.shaded.netty4.io.netty.channel.ChannelHandlerContext;
 
+import java.net.InetAddress;
+
 import static com.alibaba.fluss.utils.Preconditions.checkNotNull;
 
 /**
@@ -40,6 +42,7 @@ public final class RpcRequest {
     private final ByteBuf buffer;
     private final String listenerName;
     private final FlussPrincipal principal;
+    private final InetAddress address;
     private final ChannelHandlerContext channelContext;
 
     // the time when the request is received by server
@@ -54,6 +57,7 @@ public final class RpcRequest {
             ByteBuf buffer,
             String listenerName,
             FlussPrincipal principal,
+            InetAddress address,
             ChannelHandlerContext channelContext) {
         this.apiKey = apiKey;
         this.apiVersion = apiVersion;
@@ -63,6 +67,7 @@ public final class RpcRequest {
         this.buffer = checkNotNull(buffer);
         this.listenerName = listenerName;
         this.principal = principal;
+        this.address = address;
         this.channelContext = channelContext;
         this.startTimeMs = System.currentTimeMillis();
     }
@@ -77,6 +82,7 @@ public final class RpcRequest {
         this.buffer = null;
         this.listenerName = null;
         this.principal = null;
+        this.address = null;
         this.channelContext = null;
         this.startTimeMs = System.currentTimeMillis();
     }
@@ -99,6 +105,14 @@ public final class RpcRequest {
 
     public ApiMessage getMessage() {
         return message;
+    }
+
+    public InetAddress getAddress() {
+        return address;
+    }
+
+    public FlussPrincipal getPrincipal() {
+        return principal;
     }
 
     public void releaseBuffer() {

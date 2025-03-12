@@ -54,9 +54,19 @@ import com.alibaba.fluss.metadata.TableInfo;
 import com.alibaba.fluss.metadata.TablePath;
 import com.alibaba.fluss.rpc.gateway.CoordinatorGateway;
 import com.alibaba.fluss.rpc.messages.MetadataRequest;
+import com.alibaba.fluss.security.acl.AccessControlEntry;
+import com.alibaba.fluss.security.acl.AccessControlEntryFilter;
+import com.alibaba.fluss.security.acl.AclBinding;
+import com.alibaba.fluss.security.acl.AclBindingFilter;
+import com.alibaba.fluss.security.acl.FlussPrincipal;
+import com.alibaba.fluss.security.acl.OperationType;
+import com.alibaba.fluss.security.acl.PermissionType;
+import com.alibaba.fluss.security.acl.Resource;
+import com.alibaba.fluss.security.acl.ResourceFilter;
 import com.alibaba.fluss.server.kv.snapshot.CompletedSnapshot;
 import com.alibaba.fluss.server.kv.snapshot.KvSnapshotHandle;
 import com.alibaba.fluss.types.DataTypes;
+import com.alibaba.fluss.utils.concurrent.FutureUtils;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -773,6 +783,57 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
                                     .getTableName())
                     .isEqualTo("test_table_1");
         }
+    }
+
+    @Test
+    void testAclOperation() throws Exception {
+        FlussPrincipal user1 = new FlussPrincipal("USER", "test_ufu");
+        AclBinding aclBinding =
+                new AclBinding(
+                        Resource.table("test_db", "person"),
+                        new AccessControlEntry(
+                                user1, "*", OperationType.CREATE, PermissionType.ALLOW));
+        List<AclBinding> aclBindings =
+                Arrays.asList(
+                        aclBinding,
+                        new AclBinding(
+                                Resource.database("test_db2"),
+                                new AccessControlEntry(
+                                        new FlussPrincipal("ROLE", "test_role"),
+                                        "127.0.0.1",
+                                        OperationType.DELETE,
+                                        PermissionType.ANY)),
+                        new AclBinding(
+                                Resource.cluster(),
+                                new AccessControlEntry(
+                                        new FlussPrincipal("ROLE", "test_role"),
+                                        "127.0.0.1",
+                                        OperationType.DELETE,
+                                        PermissionType.ALLOW)));
+        FutureUtils.waitForAll(admin.createAcls(aclBindings).getFutures().values()).get();
+
+        assertThat(admin.listAcls(AclBindingFilter.ANY).get())
+                .containsExactlyInAnyOrderElementsOf(aclBindings);
+        assertThat(
+                        admin.listAcls(
+                                        new AclBindingFilter(
+                                                ResourceFilter.ANY,
+                                                new AccessControlEntryFilter(
+                                                        user1,
+                                                        null,
+                                                        OperationType.ANY,
+                                                        PermissionType.ALLOW)))
+                                .get())
+                .containsExactlyInAnyOrderElementsOf(Collections.singleton(aclBinding));
+
+        assertThat(admin.dropAcls(Collections.singletonList(AclBindingFilter.ANY)).all().get())
+                .containsExactlyInAnyOrderElementsOf(aclBindings);
+        assertThat(admin.listAcls(AclBindingFilter.ANY).get()).isEmpty();
+    }
+
+    //todo: 单独搞一个测试
+    public void testAuthorization() throws Exception {
+
     }
 
     private void assertHasTabletServerNumber(int tabletServerNumber) {

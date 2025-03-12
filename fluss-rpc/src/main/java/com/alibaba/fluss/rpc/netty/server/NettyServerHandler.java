@@ -42,6 +42,8 @@ import com.alibaba.fluss.utils.MathUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
+
 import static com.alibaba.fluss.rpc.protocol.MessageCodec.encodeErrorResponse;
 import static com.alibaba.fluss.rpc.protocol.MessageCodec.encodeServerFailure;
 import static com.alibaba.fluss.rpc.protocol.MessageCodec.encodeSuccessResponse;
@@ -121,6 +123,7 @@ public final class NettyServerHandler extends ChannelInboundHandlerAdapter {
                             buffer,
                             listenerName,
                             principal,
+                            ((InetSocketAddress) ctx.channel().remoteAddress()).getAddress(),
                             ctx);
             // TODO: we can introduce a smarter and dynamic strategy to distribute requests to
             //  channels

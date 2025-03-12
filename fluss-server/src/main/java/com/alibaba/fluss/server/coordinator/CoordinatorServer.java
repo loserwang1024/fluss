@@ -28,6 +28,8 @@ import com.alibaba.fluss.rpc.RpcServer;
 import com.alibaba.fluss.rpc.metrics.ClientMetricGroup;
 import com.alibaba.fluss.rpc.netty.server.RequestsMetrics;
 import com.alibaba.fluss.server.ServerBase;
+import com.alibaba.fluss.server.authorizer.Authorizer;
+import com.alibaba.fluss.server.authorizer.AuthorizerLoader;
 import com.alibaba.fluss.server.coordinator.event.CoordinatorEventManager;
 import com.alibaba.fluss.server.metadata.ServerMetadataCache;
 import com.alibaba.fluss.server.metadata.ServerMetadataCacheImpl;
@@ -110,6 +112,9 @@ public class CoordinatorServer extends ServerBase {
     @GuardedBy("lock")
     private AutoPartitionManager autoPartitionManager;
 
+    @GuardedBy("lock")
+    private Authorizer authorizer;
+
     public CoordinatorServer(Configuration conf) {
         super(conf);
         validateConfigs(conf);
@@ -146,6 +151,11 @@ public class CoordinatorServer extends ServerBase {
 
             this.metadataCache = new ServerMetadataCacheImpl();
 
+            this.authorizer = AuthorizerLoader.createAuthorizer(conf, pluginManager);
+            if (authorizer != null) {
+                authorizer.startup();
+            }
+
             MetadataManager metadataManager = new MetadataManager(zkClient, conf);
             this.coordinatorService =
                     new CoordinatorService(
@@ -154,7 +164,8 @@ public class CoordinatorServer extends ServerBase {
                             zkClient,
                             this::getCoordinatorEventManager,
                             metadataCache,
-                            metadataManager);
+                            metadataManager,
+                            authorizer);
 
             this.rpcServer =
                     RpcServer.create(
@@ -308,6 +319,14 @@ public class CoordinatorServer extends ServerBase {
             try {
                 if (zkClient != null) {
                     zkClient.close();
+                }
+            } catch (Throwable t) {
+                exception = ExceptionUtils.firstOrSuppressed(t, exception);
+            }
+
+            try {
+                if (authorizer != null) {
+                    authorizer.close();
                 }
             } catch (Throwable t) {
                 exception = ExceptionUtils.firstOrSuppressed(t, exception);

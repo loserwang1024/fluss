@@ -19,6 +19,7 @@ package com.alibaba.fluss.server;
 import com.alibaba.fluss.cluster.BucketLocation;
 import com.alibaba.fluss.cluster.ServerNode;
 import com.alibaba.fluss.cluster.ServerType;
+import com.alibaba.fluss.exception.AuthenticationException;
 import com.alibaba.fluss.exception.FlussRuntimeException;
 import com.alibaba.fluss.exception.KvSnapshotNotExistException;
 import com.alibaba.fluss.exception.LakeTableSnapshotNotExistException;
@@ -55,6 +56,8 @@ import com.alibaba.fluss.rpc.messages.GetTableInfoRequest;
 import com.alibaba.fluss.rpc.messages.GetTableInfoResponse;
 import com.alibaba.fluss.rpc.messages.GetTableSchemaRequest;
 import com.alibaba.fluss.rpc.messages.GetTableSchemaResponse;
+import com.alibaba.fluss.rpc.messages.ListAclsRequest;
+import com.alibaba.fluss.rpc.messages.ListAclsResponse;
 import com.alibaba.fluss.rpc.messages.ListDatabasesRequest;
 import com.alibaba.fluss.rpc.messages.ListDatabasesResponse;
 import com.alibaba.fluss.rpc.messages.ListPartitionInfosRequest;
@@ -70,8 +73,17 @@ import com.alibaba.fluss.rpc.messages.TableExistsRequest;
 import com.alibaba.fluss.rpc.messages.TableExistsResponse;
 import com.alibaba.fluss.rpc.messages.UpdateMetadataRequest;
 import com.alibaba.fluss.rpc.messages.UpdateMetadataResponse;
+import com.alibaba.fluss.rpc.netty.server.Session;
 import com.alibaba.fluss.rpc.protocol.ApiKeys;
 import com.alibaba.fluss.rpc.protocol.ApiManager;
+import com.alibaba.fluss.rpc.util.CommonRpcMessageUtils;
+import com.alibaba.fluss.security.acl.AclBinding;
+import com.alibaba.fluss.security.acl.AclBindingFilter;
+import com.alibaba.fluss.security.acl.OperationType;
+import com.alibaba.fluss.security.acl.Resource;
+import com.alibaba.fluss.security.acl.ResourceType;
+import com.alibaba.fluss.server.authorizer.Action;
+import com.alibaba.fluss.server.authorizer.Authorizer;
 import com.alibaba.fluss.server.coordinator.CoordinatorService;
 import com.alibaba.fluss.server.coordinator.MetadataManager;
 import com.alibaba.fluss.server.kv.snapshot.CompletedSnapshot;
@@ -97,11 +109,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import static com.alibaba.fluss.server.utils.RpcMessageUtils.makeGetLatestKvSnapshotsResponse;
 import static com.alibaba.fluss.server.utils.RpcMessageUtils.makeKvSnapshotMetadataResponse;
@@ -124,6 +138,7 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
     protected final ZooKeeperClient zkClient;
     protected final ServerMetadataCache metadataCache;
     protected final MetadataManager metadataManager;
+    protected final Authorizer authorizer;
 
     private long tokenLastUpdateTimeMs = 0;
     private ObtainedSecurityToken securityToken = null;
@@ -133,13 +148,15 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
             ServerType provider,
             ZooKeeperClient zkClient,
             ServerMetadataCache metadataCache,
-            MetadataManager metadataManager) {
+            MetadataManager metadataManager,
+            @Nullable Authorizer authorizer) {
         this.remoteFileSystem = remoteFileSystem;
         this.provider = provider;
         this.apiManager = new ApiManager(provider);
         this.zkClient = zkClient;
         this.metadataCache = metadataCache;
         this.metadataManager = metadataManager;
+        this.authorizer = authorizer;
     }
 
     @Override
@@ -167,13 +184,19 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
     public CompletableFuture<ListDatabasesResponse> listDatabases(ListDatabasesRequest request) {
         ListDatabasesResponse response = new ListDatabasesResponse();
         List<String> databaseNames = metadataManager.listDatabases();
-        response.addAllDatabaseNames(databaseNames);
+
+        Set<String> authorizedDatabaseNames =
+                filterByAuthorized(OperationType.DESCRIBE, ResourceType.DATABASE, databaseNames);
+
+        response.addAllDatabaseNames(authorizedDatabaseNames);
         return CompletableFuture.completedFuture(response);
     }
 
     @Override
     public CompletableFuture<GetDatabaseInfoResponse> getDatabaseInfo(
             GetDatabaseInfoRequest request) {
+        doAuthorize(OperationType.DESCRIBE, Resource.database(request.getDatabaseName()));
+
         GetDatabaseInfoResponse response = new GetDatabaseInfoResponse();
         DatabaseInfo databaseInfo = metadataManager.getDatabase(request.getDatabaseName());
         response.setDatabaseJson(databaseInfo.getDatabaseDescriptor().toJsonBytes())
@@ -194,14 +217,29 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
     public CompletableFuture<ListTablesResponse> listTables(ListTablesRequest request) {
         ListTablesResponse response = new ListTablesResponse();
         List<String> tableNames = metadataManager.listTables(request.getDatabaseName());
-        response.addAllTableNames(tableNames);
+
+        Set<String> authorizedTableNames =
+                filterByAuthorized(
+                        OperationType.DESCRIBE,
+                        ResourceType.TABLE,
+                        tableNames.stream()
+                                .map(t -> request.getDatabaseName() + "." + t)
+                                .collect(Collectors.toSet()));
+        response.addAllTableNames(
+                authorizedTableNames.stream()
+                        .map(t -> t.substring(t.indexOf(".") + 1))
+                        .collect(Collectors.toList()));
         return CompletableFuture.completedFuture(response);
     }
 
     @Override
     public CompletableFuture<GetTableInfoResponse> getTableInfo(GetTableInfoRequest request) {
-        GetTableInfoResponse response = new GetTableInfoResponse();
         TablePath tablePath = toTablePath(request.getTablePath());
+        doAuthorize(
+                OperationType.DESCRIBE,
+                Resource.table(tablePath.getDatabaseName(), tablePath.getTableName()));
+
+        GetTableInfoResponse response = new GetTableInfoResponse();
         TableInfo tableInfo = metadataManager.getTable(tablePath);
         response.setTableJson(tableInfo.toTableDescriptor().toJsonBytes())
                 .setSchemaId(tableInfo.getSchemaId())
@@ -432,6 +470,21 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
                 RpcMessageUtils.makeGetLatestLakeSnapshotResponse(tableId, lakeTableSnapshot));
     }
 
+    @Override
+    public CompletableFuture<ListAclsResponse> listAcls(ListAclsRequest request) {
+        doAuthorize(OperationType.DESCRIBE, Resource.cluster());
+
+        AclBindingFilter aclBindingFilter =
+                CommonRpcMessageUtils.toAclFilter(request.getAclFilter());
+        try {
+            Collection<AclBinding> acls = authorizer.listAcls(aclBindingFilter);
+            return CompletableFuture.completedFuture(RpcMessageUtils.makeListAclsResponse(acls));
+        } catch (Exception e) {
+            throw new FlussRuntimeException(
+                    String.format("Failed to list acls for resource: ", aclBindingFilter), e);
+        }
+    }
+
     private Set<ServerNode> getAllTabletServerNodes(String listenerName) {
         return new HashSet<>(metadataCache.getAllAliveTabletServers(listenerName).values());
     }
@@ -617,6 +670,45 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
             return new AssignmentInfo(
                     tableId, zkClient.getTableAssignment(tableId).orElse(null), null);
         }
+    }
+
+    protected void doAuthorize(OperationType operationType, Resource resource) {
+        Session session = currentSession();
+        if (authorizer != null && !authorizer.authorize(session, operationType, resource)) {
+            throw new AuthenticationException(
+                    String.format(
+                            "Principal %s have no authorization to operate %s on resource %s ",
+                            session.getPrincipal(), operationType, resource));
+        }
+    }
+
+    protected Set<String> filterByAuthorized(
+            OperationType operation, ResourceType resourceType, Collection<String> resourceNames) {
+
+        Set<String> resourceNameSet = new HashSet<>(resourceNames);
+
+        if (authorizer == null) {
+            return new HashSet<>(resourceNameSet);
+        }
+
+        List<Action> actions = new ArrayList<>();
+        for (String resourceName : resourceNameSet) {
+            actions.add(new Action(new Resource(resourceType, resourceName), operation));
+        }
+
+        List<Boolean> results = authorizer.authorize(currentSession(), actions);
+
+        Set<String> authorizedResource = new HashSet<>();
+        Iterator<String> resourceIterator = resourceNameSet.iterator();
+        for (Boolean result : results) {
+            if (result && resourceIterator.hasNext()) {
+                authorizedResource.add(resourceIterator.next());
+            } else if (resourceIterator.hasNext()) {
+                resourceIterator.next(); // Skip denied resources
+            }
+        }
+
+        return authorizedResource;
     }
 
     private static class AssignmentInfo {

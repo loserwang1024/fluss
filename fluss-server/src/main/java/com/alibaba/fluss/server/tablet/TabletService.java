@@ -40,6 +40,7 @@ import com.alibaba.fluss.rpc.messages.NotifyLeaderAndIsrRequest;
 import com.alibaba.fluss.rpc.messages.NotifyLeaderAndIsrResponse;
 import com.alibaba.fluss.rpc.messages.NotifyRemoteLogOffsetsRequest;
 import com.alibaba.fluss.rpc.messages.NotifyRemoteLogOffsetsResponse;
+import com.alibaba.fluss.rpc.messages.PbFetchLogReqForTable;
 import com.alibaba.fluss.rpc.messages.PrefixLookupRequest;
 import com.alibaba.fluss.rpc.messages.PrefixLookupResponse;
 import com.alibaba.fluss.rpc.messages.ProduceLogRequest;
@@ -49,6 +50,7 @@ import com.alibaba.fluss.rpc.messages.PutKvResponse;
 import com.alibaba.fluss.rpc.messages.StopReplicaRequest;
 import com.alibaba.fluss.rpc.messages.StopReplicaResponse;
 import com.alibaba.fluss.server.RpcServiceBase;
+import com.alibaba.fluss.server.authorizer.Authorizer;
 import com.alibaba.fluss.server.coordinator.MetadataManager;
 import com.alibaba.fluss.server.entity.FetchData;
 import com.alibaba.fluss.server.log.FetchParams;
@@ -57,6 +59,8 @@ import com.alibaba.fluss.server.metadata.ServerMetadataCache;
 import com.alibaba.fluss.server.replica.ReplicaManager;
 import com.alibaba.fluss.server.utils.RpcMessageUtils;
 import com.alibaba.fluss.server.zk.ZooKeeperClient;
+
+import javax.annotation.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -82,8 +86,15 @@ public final class TabletService extends RpcServiceBase implements TabletServerG
             ZooKeeperClient zkClient,
             ReplicaManager replicaManager,
             ServerMetadataCache metadataCache,
-            MetadataManager metadataManager) {
-        super(remoteFileSystem, ServerType.TABLET_SERVER, zkClient, metadataCache, metadataManager);
+            MetadataManager metadataManager,
+            @Nullable Authorizer authorizer) {
+        super(
+                remoteFileSystem,
+                ServerType.TABLET_SERVER,
+                zkClient,
+                metadataCache,
+                metadataManager,
+                authorizer);
         this.serviceName = "server-" + serverId;
         this.replicaManager = replicaManager;
     }
@@ -113,6 +124,8 @@ public final class TabletService extends RpcServiceBase implements TabletServerG
 
     @Override
     public CompletableFuture<FetchLogResponse> fetchLog(FetchLogRequest request) {
+        List<PbFetchLogReqForTable> tablesReqsList = request.getTablesReqsList();
+
         CompletableFuture<FetchLogResponse> response = new CompletableFuture<>();
         Map<TableBucket, FetchData> fetchLogData = getFetchLogData(request);
         FetchParams fetchParams;

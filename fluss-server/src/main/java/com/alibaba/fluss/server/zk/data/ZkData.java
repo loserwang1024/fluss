@@ -21,9 +21,13 @@ import com.alibaba.fluss.metadata.Schema;
 import com.alibaba.fluss.metadata.TableBucket;
 import com.alibaba.fluss.metadata.TablePartition;
 import com.alibaba.fluss.metadata.TablePath;
+import com.alibaba.fluss.security.acl.Resource;
+import com.alibaba.fluss.security.acl.ResourceType;
 import com.alibaba.fluss.utils.json.JsonSerdeUtils;
 
 import javax.annotation.Nullable;
+
+import java.nio.charset.StandardCharsets;
 
 /** The data and path stored in ZooKeeper nodes (znodes). */
 public final class ZkData {
@@ -546,6 +550,98 @@ public final class ZkData {
 
         public static LakeTableSnapshot decode(byte[] json) {
             return JsonSerdeUtils.readValue(json, LakeTableSnapshotJsonSerde.INSTANCE);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // ZNodes under "/acl"
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * The znode for acl. The znode path is:
+     *
+     * <p>/acls
+     */
+    public static final class AclNode {
+        public static String path() {
+            return "/fluss-acls";
+        }
+    }
+
+    /**
+     * The znode for a resource acl. The znode path is:
+     *
+     * <p>/metadata/acls/[resourceType]/[resourceName]
+     */
+    public static final class ResourceNode {
+
+        public static String path(ResourceType resourceType) {
+            return AclNode.path() + "/" + resourceType;
+        }
+
+        public static String path(Resource resource) {
+            return AclNode.path() + "/" + resource.getType() + "/" + resource.getName();
+        }
+
+        /**
+         * Extracts the resource from the given zookeeper path. If the given path is not a valid
+         * {@link TableZNode} path, returns null.
+         */
+        @Nullable
+        public static Resource parseResource(String zkPath) {
+            String prefix = "/fluss-acls/";
+            if (!zkPath.startsWith(prefix)) {
+                return null;
+            }
+            String[] split = zkPath.substring(prefix.length()).split("/");
+            if (split.length != 2) {
+                return null;
+            }
+            return Resource.of(split[0], split[1]);
+        }
+
+        public static byte[] encode(ResourceAcl resourceAcl) {
+            return JsonSerdeUtils.writeValueAsBytes(resourceAcl, ResourceAclJsonSerde.INSTANCE);
+        }
+
+        public static ResourceAcl decode(byte[] json) {
+            return JsonSerdeUtils.readValue(json, ResourceAclJsonSerde.INSTANCE);
+        }
+    }
+
+    public static final class AclChangesNode {
+        public static String path() {
+            return "/fluss-acl-changes";
+        }
+    }
+
+    public static final class AclChangeNotificationNode {
+        private static final String SEQUENT_NUMBER_PREFIX = "acl_changes_";
+        private static final String RESOURCE_SEPARATOR = ":";
+
+        public static String pathPrefix() {
+            return AclChangesNode.path() + "/" + SEQUENT_NUMBER_PREFIX;
+        }
+
+        public static String prefix() {
+            return SEQUENT_NUMBER_PREFIX;
+        }
+
+        public static byte[] encode(Resource resource) {
+            return (resource.getType() + RESOURCE_SEPARATOR + resource.getName())
+                    .getBytes(StandardCharsets.UTF_8);
+        }
+
+        public static Resource decode(byte[] json) {
+            String resourceStr = new String(json, StandardCharsets.UTF_8);
+            String[] split = resourceStr.split(RESOURCE_SEPARATOR);
+            if (split.length == 2) {
+                return Resource.of(split[0], split[1]);
+            } else {
+                throw new IllegalArgumentException(
+                        "expected a string in format ResourceType:ResourceName but got "
+                                + resourceStr);
+            }
         }
     }
 }
