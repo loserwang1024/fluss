@@ -17,6 +17,7 @@
 package com.alibaba.fluss.server.coordinator;
 
 import com.alibaba.fluss.annotation.VisibleForTesting;
+import com.alibaba.fluss.cluster.Endpoint;
 import com.alibaba.fluss.config.ConfigOptions;
 import com.alibaba.fluss.config.Configuration;
 import com.alibaba.fluss.exception.IllegalConfigurationException;
@@ -126,7 +127,7 @@ public class CoordinatorServer extends ServerBase {
     protected void startServices() throws Exception {
         synchronized (lock) {
             LOG.info("Initializing Coordinator services.");
-
+            List<Endpoint> endpoints = Endpoint.loadCoordinatorServerEndpoints(conf);
             this.serverId = UUID.randomUUID().toString();
 
             // for metrics
@@ -135,7 +136,7 @@ public class CoordinatorServer extends ServerBase {
                     ServerMetricUtils.createCoordinatorGroup(
                             metricRegistry,
                             ServerMetricUtils.validateAndGetClusterId(conf),
-                            conf.getString(ConfigOptions.COORDINATOR_HOST),
+                            endpoints.get(0).getHost(),
                             serverId);
 
             this.zkClient = ZooKeeperUtils.startZookeeperClient(conf, this);
@@ -155,8 +156,7 @@ public class CoordinatorServer extends ServerBase {
             this.rpcServer =
                     RpcServer.create(
                             conf,
-                            conf.getString(ConfigOptions.COORDINATOR_HOST),
-                            conf.getString(ConfigOptions.COORDINATOR_PORT),
+                            endpoints,
                             coordinatorService,
                             serverMetricGroup,
                             RequestsMetrics.createCoordinatorServerRequestMetrics(
@@ -213,8 +213,13 @@ public class CoordinatorServer extends ServerBase {
     }
 
     private void registerCoordinatorLeader() throws Exception {
+        List<Endpoint> bindEndpoints = rpcServer.getBindEndpoints();
+        List<Endpoint> advisedEndpoints =
+                Endpoint.fromListenersString(conf.getString(ConfigOptions.ADVERTISED_LISTENERS));
         CoordinatorAddress coordinatorAddress =
-                new CoordinatorAddress(this.serverId, rpcServer.getHostname(), rpcServer.getPort());
+                new CoordinatorAddress(
+                        this.serverId,
+                        Endpoint.getRegisteredEndpoint(bindEndpoints, advisedEndpoints));
         zkClient.registerCoordinatorLeader(coordinatorAddress);
     }
 
@@ -340,7 +345,7 @@ public class CoordinatorServer extends ServerBase {
     }
 
     @VisibleForTesting
-    RpcServer getRpcServer() {
+    public RpcServer getRpcServer() {
         return rpcServer;
     }
 
