@@ -133,12 +133,12 @@ public class HadoopUtils {
         if (useTicketCache && !ugi.hasKerberosCredentials()) {
             if (hasHDFSDelegationToken(ugi)) {
                 LOG.warn(
-                        "Hadoop security is enabled but current login user does not have Kerberos credentials, "
+                        "Hadoop security is enabled but current jaas user does not have Kerberos credentials, "
                                 + "use delegation token instead. Fluss application will terminate after token expires.");
                 return true;
             } else {
                 LOG.error(
-                        "Hadoop security is enabled, but current login user has neither Kerberos credentials "
+                        "Hadoop security is enabled, but current jaas user has neither Kerberos credentials "
                                 + "nor delegation tokens!");
                 return false;
             }

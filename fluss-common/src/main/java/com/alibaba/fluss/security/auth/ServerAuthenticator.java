@@ -30,6 +30,15 @@ public interface ServerAuthenticator {
 
     String protocol();
 
+    default void matchProtocol(String protocol) throws AuthenticationException {
+        if (!protocol().equals(protocol)) {
+            throw new AuthenticationException(
+                    String.format(
+                            "Authenticate protocol not match: protocol of server is '%s' while protocol of client is '%s'",
+                            protocol(), protocol));
+        }
+    }
+
     /** Initialize the authenticator. */
     default void initialize(AuthenticateContext context) {}
 
@@ -84,5 +93,11 @@ public interface ServerAuthenticator {
     FlussPrincipal createPrincipal();
 
     /** The context of the authentication process. */
-    interface AuthenticateContext {}
+    interface AuthenticateContext {
+        String address();
+
+        String listenerName();
+
+        String protocol();
+    }
 }
