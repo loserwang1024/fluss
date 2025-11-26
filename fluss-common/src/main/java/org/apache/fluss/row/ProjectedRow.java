@@ -31,12 +31,13 @@ import java.util.Arrays;
  */
 @PublicEvolving
 public class ProjectedRow implements InternalRow {
+    public static final int UNEXIST_MAPPING = -1;
 
-    private final int[] indexMapping;
+    protected final int[] indexMapping;
 
-    private InternalRow row;
+    protected InternalRow row;
 
-    private ProjectedRow(int[] indexMapping) {
+    protected ProjectedRow(int[] indexMapping) {
         this.indexMapping = indexMapping;
     }
 

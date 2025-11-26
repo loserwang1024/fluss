@@ -18,8 +18,15 @@
 package org.apache.fluss.row.encode;
 
 import org.apache.fluss.memory.MemorySegment;
+import org.apache.fluss.metadata.KvFormat;
+import org.apache.fluss.metadata.Schema;
+import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.row.BinaryRow;
 import org.apache.fluss.row.decode.RowDecoder;
+import org.apache.fluss.types.DataType;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.apache.fluss.row.encode.ValueEncoder.SCHEMA_ID_LENGTH;
 
@@ -29,21 +36,32 @@ import static org.apache.fluss.row.encode.ValueEncoder.SCHEMA_ID_LENGTH;
  */
 public class ValueDecoder {
 
-    // todo: the row decoder should be inferred from the schema id encoded in the value
-    private final RowDecoder rowDecoder;
+    // todo: use cache.
+    private final Map<Short, RowDecoder> rowDecoders;
+    private final SchemaGetter schemaGetter;
+    private final KvFormat kvFormat;
 
-    public ValueDecoder(RowDecoder rowDecoder) {
-        this.rowDecoder = rowDecoder;
-    }
-
-    public RowDecoder getRowDecoder() {
-        return rowDecoder;
+    public ValueDecoder(SchemaGetter schemaGetter, KvFormat kvFormat) {
+        this.rowDecoders = new HashMap<>();
+        this.schemaGetter = schemaGetter;
+        this.kvFormat = kvFormat;
     }
 
     /** Decode the value bytes and return the schema id and the row encoded in the value bytes. */
     public Value decodeValue(byte[] valueBytes) {
         MemorySegment memorySegment = MemorySegment.wrap(valueBytes);
         short schemaId = memorySegment.getShort(0);
+
+        RowDecoder rowDecoder =
+                rowDecoders.computeIfAbsent(
+                        schemaId,
+                        (id) -> {
+                            Schema schema = schemaGetter.getSchema(schemaId);
+                            return RowDecoder.create(
+                                    kvFormat,
+                                    schema.getRowType().getChildren().toArray(new DataType[0]));
+                        });
+
         BinaryRow row =
                 rowDecoder.decode(
                         memorySegment, SCHEMA_ID_LENGTH, valueBytes.length - SCHEMA_ID_LENGTH);
@@ -55,7 +73,7 @@ public class ValueDecoder {
         public final short schemaId;
         public final BinaryRow row;
 
-        private Value(short schemaId, BinaryRow row) {
+        public Value(short schemaId, BinaryRow row) {
             this.schemaId = schemaId;
             this.row = row;
         }

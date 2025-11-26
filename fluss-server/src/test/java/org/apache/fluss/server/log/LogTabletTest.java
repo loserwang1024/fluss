@@ -23,11 +23,13 @@ import org.apache.fluss.config.MemorySize;
 import org.apache.fluss.exception.OutOfOrderSequenceException;
 import org.apache.fluss.metadata.LogFormat;
 import org.apache.fluss.metadata.PhysicalTablePath;
+import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.record.LogRecord;
 import org.apache.fluss.record.LogRecordBatch;
 import org.apache.fluss.record.LogRecordReadContext;
 import org.apache.fluss.record.LogTestBase;
 import org.apache.fluss.record.MemoryLogRecords;
+import org.apache.fluss.record.TestingSchemaGetter;
 import org.apache.fluss.server.metrics.group.TestingMetricGroups;
 import org.apache.fluss.types.RowType;
 import org.apache.fluss.utils.CloseableIterator;
@@ -54,6 +56,7 @@ import java.util.Optional;
 import java.util.concurrent.ScheduledFuture;
 
 import static org.apache.fluss.record.TestData.DATA1;
+import static org.apache.fluss.record.TestData.DATA1_SCHEMA;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_ID;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_PATH;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
@@ -72,7 +75,7 @@ final class LogTabletTest extends LogTestBase {
     private FlussScheduler scheduler;
     private File logDir;
 
-    // TODO add more tests refer to kafka's UnifiedLogTest.
+    // TODOadd more tests refer to kafka's UnifiedLogTest.
 
     @BeforeEach
     public void setup() throws Exception {
@@ -373,7 +376,7 @@ final class LogTabletTest extends LogTestBase {
 
         log.updateHighWatermark(log.localLogEndOffset());
 
-        // TODO add delete log segment logic.
+        // TODOadd delete log segment logic.
     }
 
     @Test
@@ -511,8 +514,10 @@ final class LogTabletTest extends LogTestBase {
         assertThat(fetchInfo.getRecords().sizeInBytes()).isEqualTo(expectedSize);
         List<Long> actualOffsets = new ArrayList<>();
         Iterable<LogRecordBatch> batchIterable = fetchInfo.getRecords().batches();
+        TestingSchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         try (LogRecordReadContext readContext =
-                LogRecordReadContext.createArrowReadContext(baseRowType, DEFAULT_SCHEMA_ID)) {
+                LogRecordReadContext.createArrowReadContext(
+                        baseRowType, DEFAULT_SCHEMA_ID, schemaGetter)) {
             for (LogRecordBatch batch : batchIterable) {
                 try (CloseableIterator<LogRecord> iter = batch.records(readContext)) {
                     while (iter.hasNext()) {
@@ -545,8 +550,10 @@ final class LogTabletTest extends LogTestBase {
 
         assertThat(readInfo.getRecords().sizeInBytes() > 0).isTrue();
 
+        SchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         try (LogRecordReadContext readContext =
-                LogRecordReadContext.createArrowReadContext(baseRowType, DEFAULT_SCHEMA_ID)) {
+                LogRecordReadContext.createArrowReadContext(
+                        baseRowType, DEFAULT_SCHEMA_ID, schemaGetter)) {
             for (LogRecordBatch batch : readInfo.getRecords().batches()) {
                 try (CloseableIterator<LogRecord> iter = batch.records(readContext)) {
                     while (iter.hasNext()) {

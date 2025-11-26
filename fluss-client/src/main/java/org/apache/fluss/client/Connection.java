@@ -21,6 +21,7 @@ import org.apache.fluss.annotation.PublicEvolving;
 import org.apache.fluss.client.admin.Admin;
 import org.apache.fluss.client.table.Table;
 import org.apache.fluss.config.Configuration;
+import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TablePath;
 
 import javax.annotation.concurrent.ThreadSafe;
@@ -55,6 +56,16 @@ public interface Connection extends AutoCloseable {
 
     /** Retrieve a new Table client to operate data in table. */
     Table getTable(TablePath tablePath);
+
+    /**
+     * Retrieve a new Table client to operate data in table with specific schema. When performing
+     * read, write and loop operations, this schema will be used.
+     *
+     * @param tablePath the path of the table to operate on
+     * @param schemaInfo the schema information to be used for the table operations
+     * @return a new Table client instance for the specified table and schema
+     */
+    Table getTable(TablePath tablePath, SchemaInfo schemaInfo);
 
     /** Close the connection and release all resources. */
     @Override

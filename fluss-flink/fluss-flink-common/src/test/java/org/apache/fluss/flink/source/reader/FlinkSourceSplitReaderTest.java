@@ -29,6 +29,7 @@ import org.apache.fluss.flink.source.split.LogSplit;
 import org.apache.fluss.flink.source.split.SourceSplitBase;
 import org.apache.fluss.flink.utils.FlinkTestBase;
 import org.apache.fluss.metadata.Schema;
+import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableDescriptor;
 import org.apache.fluss.metadata.TablePath;
@@ -88,6 +89,7 @@ class FlinkSourceSplitReaderTest extends FlinkTestBase {
                                                 DataTypes.FIELD("id", DataTypes.BIGINT()),
                                                 DataTypes.FIELD("name", DataTypes.STRING()),
                                                 DataTypes.FIELD("age", DataTypes.INT())),
+                                        new SchemaInfo(schema1, 1),
                                         null,
                                         createMockSourceReaderMetrics(),
                                         null))
@@ -106,6 +108,7 @@ class FlinkSourceSplitReaderTest extends FlinkTestBase {
                                                 DataTypes.FIELD(
                                                         "id", DataTypes.BIGINT().copy(false)),
                                                 DataTypes.FIELD("name", DataTypes.STRING())),
+                                        new SchemaInfo(schema1, 1),
                                         new int[] {1, 0},
                                         createMockSourceReaderMetrics(),
                                         null))
@@ -396,7 +399,13 @@ class FlinkSourceSplitReaderTest extends FlinkTestBase {
 
     private FlinkSourceSplitReader createSplitReader(TablePath tablePath, RowType rowType) {
         return new FlinkSourceSplitReader(
-                clientConf, tablePath, rowType, null, createMockSourceReaderMetrics(), null);
+                clientConf,
+                tablePath,
+                rowType,
+                new SchemaInfo(Schema.newBuilder().fromRowType(rowType).build(), 1),
+                null,
+                createMockSourceReaderMetrics(),
+                null);
     }
 
     private FlinkSourceReaderMetrics createMockSourceReaderMetrics() {

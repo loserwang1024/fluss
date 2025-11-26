@@ -36,6 +36,7 @@ import org.apache.fluss.flink.source.split.SnapshotSplit;
 import org.apache.fluss.flink.source.split.SourceSplitBase;
 import org.apache.fluss.lake.source.LakeSource;
 import org.apache.fluss.lake.source.LakeSplit;
+import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.types.RowType;
@@ -119,23 +120,29 @@ public class FlinkSourceSplitReader implements SplitReader<RecordAndPos, SourceS
             Configuration flussConf,
             TablePath tablePath,
             RowType sourceOutputType,
+            SchemaInfo schemaInfo,
             @Nullable int[] projectedFields,
             FlinkSourceReaderMetrics flinkSourceReaderMetrics,
             @Nullable LakeSource<LakeSplit> lakeSource) {
         this.flinkMetricRegistry =
                 new FlinkMetricRegistry(flinkSourceReaderMetrics.getSourceReaderMetricGroup());
         this.connection = ConnectionFactory.createConnection(flussConf, flinkMetricRegistry);
-        this.table = connection.getTable(tablePath);
+        this.table = connection.getTable(tablePath, schemaInfo);
         this.sourceOutputType = sourceOutputType;
         this.boundedSplits = new ArrayDeque<>();
         this.subscribedBuckets = new HashMap<>();
-        this.projectedFields = projectedFields;
         this.flinkSourceReaderMetrics = flinkSourceReaderMetrics;
+
         sanityCheck(table.getTableInfo().getRowType(), projectedFields);
+        this.projectedFields = projectedFields;
         this.logScanner = table.newScan().project(projectedFields).createLogScanner();
         this.stoppingOffsets = new HashMap<>();
         this.emptyLogSplits = new HashSet<>();
         this.lakeSource = lakeSource;
+        LOG.info(
+                "fluss table schema: {}, flink table output type:{}",
+                table.getTableInfo().getSchema(),
+                sourceOutputType);
     }
 
     @Override
@@ -213,7 +220,8 @@ public class FlinkSourceSplitReader implements SplitReader<RecordAndPos, SourceS
                     LakeSnapshotAndFlussLogSplit lakeSnapshotAndFlussLogSplit =
                             (LakeSnapshotAndFlussLogSplit) sourceSplitBase;
                     if (lakeSnapshotAndFlussLogSplit.isStreaming()) {
-                        // is streaming split which has no stopping offset, we need also subscribe
+                        // is streaming split which has no stopping offset, we need also
+                        // subscribe
                         // change log
                         subscribeLog(
                                 lakeSnapshotAndFlussLogSplit,

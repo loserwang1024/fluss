@@ -21,6 +21,7 @@ import org.apache.fluss.annotation.PublicEvolving;
 import org.apache.fluss.exception.CorruptMessageException;
 import org.apache.fluss.memory.MemorySegment;
 import org.apache.fluss.metadata.LogFormat;
+import org.apache.fluss.row.PruneRow;
 import org.apache.fluss.row.arrow.ArrowReader;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.memory.BufferAllocator;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.vector.VectorSchemaRoot;
@@ -217,18 +218,49 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
         long timestamp = commitTimestamp();
         LogFormat logFormat = context.getLogFormat();
         RowType rowType = context.getRowType(schemaId);
+
+        CloseableIterator<LogRecord> records;
         switch (logFormat) {
             case ARROW:
-                return columnRecordIterator(
-                        rowType,
-                        context.getVectorSchemaRoot(schemaId),
-                        context.getBufferAllocator(),
-                        timestamp);
+                records =
+                        columnRecordIterator(
+                                rowType,
+                                context.getVectorSchemaRoot(schemaId),
+                                context.getBufferAllocator(),
+                                timestamp);
+                break;
             case INDEXED:
-                return rowRecordIterator(rowType, timestamp);
+                records = rowRecordIterator(rowType, timestamp);
+                break;
             default:
                 throw new IllegalArgumentException("Unsupported log format: " + logFormat);
         }
+
+        if (!context.isSchemaChange(schemaId)) {
+            return records;
+        }
+        PruneRow pruneRow = context.getPruneRow(schemaId);
+        return new CloseableIterator<>() {
+            @Override
+            public void close() {
+                records.close();
+            }
+
+            @Override
+            public boolean hasNext() {
+                return records.hasNext();
+            }
+
+            @Override
+            public LogRecord next() {
+                LogRecord next = records.next();
+                return new GenericRecord(
+                        next.logOffset(),
+                        next.timestamp(),
+                        next.getChangeType(),
+                        pruneRow.replaceRow(next.getRow()));
+            }
+        };
     }
 
     @Override

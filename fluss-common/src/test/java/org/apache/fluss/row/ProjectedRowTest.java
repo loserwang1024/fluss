@@ -17,11 +17,18 @@
 
 package org.apache.fluss.row;
 
+import org.apache.fluss.exception.SchemaChangeException;
+import org.apache.fluss.metadata.Schema;
+import org.apache.fluss.types.DataTypes;
+
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Tests for {@link ProjectedRow}. */
 class ProjectedRowTest {
@@ -158,5 +165,66 @@ class ProjectedRowTest {
         assertThat(projectedRow.isNullAt(1)).isFalse();
         assertThat(projectedRow.isNullAt(2)).isFalse();
         assertThat(projectedRow.isNullAt(3)).isTrue();
+    }
+
+    @Test
+    void testPruneRowsWithDifferentSchema() {
+        Schema schema =
+                Schema.newBuilder()
+                        .column("a", DataTypes.BIGINT())
+                        .column("b", DataTypes.STRING())
+                        .column("c", DataTypes.DECIMAL(10, 1))
+                        .build();
+        assertThatThrownBy(
+                        () ->
+                                PruneRow.from(
+                                        schema,
+                                        Schema.newBuilder().column("a", DataTypes.INT()).build()))
+                .isExactlyInstanceOf(SchemaChangeException.class)
+                .hasMessage(
+                        "Expected datatype of column(id=0,name=a) is [INT], while the actual datatype is [BIGINT]");
+        assertThatThrownBy(
+                        () ->
+                                PruneRow.from(
+                                        schema,
+                                        Schema.newBuilder()
+                                                .fromColumns(
+                                                        Collections.singletonList(
+                                                                new Schema.Column(
+                                                                        "f",
+                                                                        DataTypes.DECIMAL(20, 1),
+                                                                        null,
+                                                                        2)))
+                                                .build()))
+                .isExactlyInstanceOf(SchemaChangeException.class)
+                .hasMessage(
+                        "Expected datatype of column(id=2,name=f) is [DECIMAL(20, 1)], while the actual datatype is [DECIMAL(10, 1)]");
+
+        Schema newSchema =
+                Schema.newBuilder()
+                        .fromColumns(
+                                Arrays.asList(
+                                        new Schema.Column("a", DataTypes.BIGINT(), null, 0),
+                                        // colum e share same id as the column c in the original
+                                        // schema.
+                                        new Schema.Column("e", DataTypes.DECIMAL(10, 1), null, 2),
+                                        // column b has different id the column b the original
+                                        // schema.
+                                        new Schema.Column("b", DataTypes.DECIMAL(10, 1), null, 3),
+                                        new Schema.Column("f", DataTypes.STRING(), null, 4)))
+                        .build();
+
+        PruneRow pruneRow = PruneRow.from(schema, newSchema);
+        pruneRow.replaceRow(
+                GenericRow.of(
+                        1L,
+                        BinaryString.fromString("value"),
+                        Decimal.fromBigDecimal(new BigDecimal("13145678.1"), 10, 1)));
+        assertThat(pruneRow.getFieldCount()).isEqualTo(4);
+        assertThat(pruneRow.getLong(0)).isEqualTo(1L);
+        assertThat(pruneRow.getDecimal(1, 10, 1).decimalVal)
+                .isEqualTo(new BigDecimal("13145678.1"));
+        assertThat(pruneRow.isNullAt(2)).isTrue();
+        assertThat(pruneRow.isNullAt(3)).isTrue();
     }
 }

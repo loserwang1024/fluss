@@ -335,6 +335,23 @@ public final class TableInfo {
                 modifiedTime);
     }
 
+    /** Replace a TableInfo with a new SchemaInfo. */
+    public static TableInfo of(TableInfo tableInfo, SchemaInfo schemaInfo) {
+        return new TableInfo(
+                tableInfo.getTablePath(),
+                tableInfo.getTableId(),
+                schemaInfo.getSchemaId(),
+                schemaInfo.getSchema(),
+                tableInfo.getBucketKeys(),
+                tableInfo.getPartitionKeys(),
+                tableInfo.getNumBuckets(),
+                tableInfo.getProperties(),
+                tableInfo.getCustomProperties(),
+                tableInfo.getComment().orElse(null),
+                tableInfo.getCreatedTime(),
+                tableInfo.getModifiedTime());
+    }
+
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) {

@@ -19,6 +19,7 @@ package org.apache.fluss.record;
 
 import org.apache.fluss.annotation.PublicEvolving;
 import org.apache.fluss.metadata.LogFormat;
+import org.apache.fluss.row.PruneRow;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.memory.BufferAllocator;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.fluss.types.RowType;
@@ -165,6 +166,8 @@ public interface LogRecordBatch {
     /** The read context of a {@link LogRecordBatch} to read records. */
     interface ReadContext {
 
+        boolean isSchemaChange(int schemaId);
+
         /** Gets the log format of the record batch. */
         LogFormat getLogFormat();
 
@@ -195,5 +198,7 @@ public interface LogRecordBatch {
 
         /** Gets the buffer allocator. */
         BufferAllocator getBufferAllocator();
+
+        PruneRow getPruneRow(int schemaId);
     }
 }

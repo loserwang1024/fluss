@@ -23,11 +23,13 @@ import org.apache.fluss.exception.InvalidRequiredAcksException;
 import org.apache.fluss.metadata.LogFormat;
 import org.apache.fluss.metadata.PhysicalTablePath;
 import org.apache.fluss.metadata.Schema;
+import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableDescriptor;
 import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.record.DefaultKvRecordBatch;
 import org.apache.fluss.record.DefaultValueRecordBatch;
+import org.apache.fluss.record.TestingSchemaGetter;
 import org.apache.fluss.row.encode.CompactedKeyEncoder;
 import org.apache.fluss.row.encode.ValueEncoder;
 import org.apache.fluss.rpc.gateway.TabletServerGateway;
@@ -174,7 +176,7 @@ public class TabletServiceITCase {
     }
 
     @Test
-    @Disabled("TODO: add back in https://github.com/apache/fluss/issues/771")
+    @Disabled("TODO: addColumn back in https://github.com/apache/fluss/issues/771")
     void testProduceLogResponseReturnInOrder() throws Exception {
         long tableId =
                 createTable(
@@ -219,6 +221,7 @@ public class TabletServiceITCase {
         long tableId =
                 createTable(FLUSS_CLUSTER_EXTENSION, DATA1_TABLE_PATH, DATA1_TABLE_DESCRIPTOR);
         TableBucket tb = new TableBucket(tableId, 0);
+        SchemaGetter schemaGetter = new TestingSchemaGetter(1, DATA1_SCHEMA);
 
         FLUSS_CLUSTER_EXTENSION.waitUntilAllReplicaReady(tb);
 
@@ -297,6 +300,7 @@ public class TabletServiceITCase {
                         .fetchLog(newFetchLogRequest(-1, tableId, 0, 10L, new int[] {0}))
                         .get(),
                 DATA1_ROW_TYPE.project(new int[] {0}),
+                schemaGetter,
                 tableId,
                 0,
                 20L,
@@ -312,6 +316,7 @@ public class TabletServiceITCase {
                         .fetchLog(newFetchLogRequest(-1, tableId, 0, 15L, new int[] {1}))
                         .get(),
                 DATA1_ROW_TYPE.project(new int[] {1}),
+                schemaGetter,
                 tableId,
                 0,
                 20L,
@@ -324,11 +329,11 @@ public class TabletServiceITCase {
                 tableId,
                 0,
                 Errors.INVALID_COLUMN_PROJECTION.code(),
-                "Projected fields [2, 3] is out of bound for schema with 2 fields.");
+                "Projected field id 2 is not contains in [0, 1]");
     }
 
     @Test
-    @Disabled("TODO: add back in https://github.com/apache/fluss/issues/777")
+    @Disabled("TODO: addColumn back in https://github.com/apache/fluss/issues/777")
     void testFetchLogWithMinFetchSizeAndTimeout() throws Exception {
         long tableId =
                 createTable(FLUSS_CLUSTER_EXTENSION, DATA1_TABLE_PATH, DATA1_TABLE_DESCRIPTOR);
@@ -736,10 +741,12 @@ public class TabletServiceITCase {
         // fetch only second field, results contains from offset 10 ~ 20, even fetchOffset=15L
         List<Object[]> expected2 = new ArrayList<>(ANOTHER_DATA1);
 
+        SchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         // limit log table scan will get the latest limit number of data.
         assertLimitScanResponse(
                 logLeaderGateWay.limitScan(newLimitScanRequest(logTableId, 0, 10)).get(),
                 DATA1_ROW_TYPE,
+                schemaGetter,
                 expected2);
     }
 
