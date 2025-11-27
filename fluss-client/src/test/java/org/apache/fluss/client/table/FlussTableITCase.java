@@ -1007,13 +1007,12 @@ class FlussTableITCase extends ClientToServerITCaseBase {
     }
 
     @Test
-    void testPutAndProjectDuringDropColumn() throws Exception {
+    void testPutAndProjectDuringAddColumn() throws Exception {
         Schema schema =
                 Schema.newBuilder()
                         .column("a", DataTypes.INT())
                         .column("b", DataTypes.INT())
                         .column("c", DataTypes.STRING())
-                        .column("d", DataTypes.BIGINT())
                         .primaryKey("a")
                         .build();
         TableDescriptor tableDescriptor = TableDescriptor.builder().schema(schema).build();
@@ -1029,13 +1028,15 @@ class FlussTableITCase extends ClientToServerITCaseBase {
             // Test schema change: add new column which equals to DATA2_ROW_TYPE
             admin.alterTable(
                             tablePath,
-                            Collections.singletonList(TableChange.dropColumn("b")),
+                            Collections.singletonList(
+                                    TableChange.addColumn(
+                                            "d",
+                                            DataTypes.BIGINT(),
+                                            "add new column",
+                                            TableChange.ColumnPosition.last())),
                             false)
                     .get();
             waitAllSchemaSync(tablePath, 2);
-
-            // todo: 当前如果删除一列的话会有问题的。
-            // 当前不同schema的table不能用同一个connection创建，这是因为getOrCreateWriterClient等目前采用了缓存，没有根据schemaId区分，会错误复用.
             try (Connection connection = ConnectionFactory.createConnection(clientConf);
                     Table newSchemaTable = connection.getTable(tablePath)) {
                 UpsertWriter oldSchemaUpsertWriter = table.newUpsert().createWriter();
@@ -1043,22 +1044,21 @@ class FlussTableITCase extends ClientToServerITCaseBase {
                 for (int b = 0; b < batches; b++) {
                     // insert 10 rows with old schema.
                     for (int i = keyId; i < keyId + 10; i++) {
-                        InternalRow row = row(i, 100, "hello, friend" + i, i * 10L);
+                        InternalRow row = row(i, 100, "hello, friend" + i);
                         oldSchemaUpsertWriter.upsert(row);
                         expectedSize += 1;
                         oldSchemaUpsertWriter.flush();
                     }
                     // update 5 rows with new schema: [keyId, keyId+4]
                     for (int i = keyId; i < keyId + 5; i++) {
-                        InternalRow row = row(i, "HELLO, FRIEND" + i, i * 10L);
+                        InternalRow row = row(i, 100, "HELLO, FRIEND" + i, i * 10L);
                         newSchemaUpsertWriter.upsert(row);
                         expectedSize += 2;
                         newSchemaUpsertWriter.flush();
                     }
                     // delete 1 row with old schema: [keyId+5]
                     int deleteKey = keyId + 5;
-                    InternalRow row =
-                            row(deleteKey, 100, "hello, friend" + deleteKey, deleteKey * 10L);
+                    InternalRow row = row(deleteKey, 100, "hello, friend" + deleteKey);
                     oldSchemaUpsertWriter.delete(row);
                     expectedSize += 1;
                     // flush the mutation batch
@@ -1066,8 +1066,8 @@ class FlussTableITCase extends ClientToServerITCaseBase {
                     keyId += 10;
                 }
 
-                // read with new schema, pos {1,0} is {c, a}
-                try (LogScanner logScanner = createLogScanner(newSchemaTable, new int[] {1, 0})) {
+                // read with new schema
+                try (LogScanner logScanner = createLogScanner(newSchemaTable, new int[] {2, 0})) {
                     subscribeFromBeginning(logScanner, table);
                     int count = 0;
                     int id = 0;

@@ -168,7 +168,7 @@ class ProjectedRowTest {
     }
 
     @Test
-    void testPruneRowsWithDifferentSchema() {
+    void testProjectedRowsWithDifferentSchema() {
         Schema schema =
                 Schema.newBuilder()
                         .column("a", DataTypes.BIGINT())
@@ -177,7 +177,7 @@ class ProjectedRowTest {
                         .build();
         assertThatThrownBy(
                         () ->
-                                PruneRow.from(
+                                ProjectedRow.from(
                                         schema,
                                         Schema.newBuilder().column("a", DataTypes.INT()).build()))
                 .isExactlyInstanceOf(SchemaChangeException.class)
@@ -185,7 +185,7 @@ class ProjectedRowTest {
                         "Expected datatype of column(id=0,name=a) is [INT], while the actual datatype is [BIGINT]");
         assertThatThrownBy(
                         () ->
-                                PruneRow.from(
+                                ProjectedRow.from(
                                         schema,
                                         Schema.newBuilder()
                                                 .fromColumns(
@@ -214,17 +214,17 @@ class ProjectedRowTest {
                                         new Schema.Column("f", DataTypes.STRING(), null, 4)))
                         .build();
 
-        PruneRow pruneRow = PruneRow.from(schema, newSchema);
-        pruneRow.replaceRow(
+        ProjectedRow projectedRow = ProjectedRow.from(schema, newSchema);
+        projectedRow.replaceRow(
                 GenericRow.of(
                         1L,
                         BinaryString.fromString("value"),
                         Decimal.fromBigDecimal(new BigDecimal("13145678.1"), 10, 1)));
-        assertThat(pruneRow.getFieldCount()).isEqualTo(4);
-        assertThat(pruneRow.getLong(0)).isEqualTo(1L);
-        assertThat(pruneRow.getDecimal(1, 10, 1).decimalVal)
+        assertThat(projectedRow.getFieldCount()).isEqualTo(4);
+        assertThat(projectedRow.getLong(0)).isEqualTo(1L);
+        assertThat(projectedRow.getDecimal(1, 10, 1).decimalVal)
                 .isEqualTo(new BigDecimal("13145678.1"));
-        assertThat(pruneRow.isNullAt(2)).isTrue();
-        assertThat(pruneRow.isNullAt(3)).isTrue();
+        assertThat(projectedRow.isNullAt(2)).isTrue();
+        assertThat(projectedRow.isNullAt(3)).isTrue();
     }
 }

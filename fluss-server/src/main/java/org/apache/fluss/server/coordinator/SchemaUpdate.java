@@ -106,14 +106,7 @@ public class SchemaUpdate implements UpdateSchema {
     }
 
     private UpdateSchema dropColumn(TableChange.DropColumn dropColumn) {
-        checkUnChangedKeys(dropColumn.getName());
-        if (!existedColumns.containsKey(dropColumn.getName())) {
-            throw new SchemaChangeException("Column " + dropColumn.getName() + " does not exist.");
-        }
-
-        Schema.Column oldColumn = existedColumns.remove(dropColumn.getName());
-        columns.remove(oldColumn);
-        return this;
+        throw new SchemaChangeException("Not support drop column now.");
     }
 
     private UpdateSchema modifiedColumn(TableChange.ModifyColumn modifyColumn) {
@@ -121,35 +114,6 @@ public class SchemaUpdate implements UpdateSchema {
     }
 
     private UpdateSchema renameColumn(TableChange.RenameColumn renameColumn) {
-        checkUnChangedKeys(renameColumn.getOldColumnName());
-        if (!existedColumns.containsKey(renameColumn.getOldColumnName())) {
-            throw new SchemaChangeException(
-                    "Column " + renameColumn.getOldColumnName() + " does not exist.");
-        }
-
-        if (existedColumns.containsKey(renameColumn.getNewColumnName())) {
-            throw new SchemaChangeException(
-                    "Column " + renameColumn.getNewColumnName() + " already exists.");
-        }
-
-        Schema.Column oldColumn = existedColumns.get(renameColumn.getOldColumnName());
-        int position = columns.indexOf(oldColumn);
-        Schema.Column newColumn =
-                new Schema.Column(
-                        renameColumn.getNewColumnName(),
-                        oldColumn.getDataType(),
-                        oldColumn.getComment().orElse(null),
-                        oldColumn.getColumnId());
-        columns.set(position, newColumn);
-        return this;
-    }
-
-    private void checkUnChangedKeys(String keyName) {
-        if (primaryKeys.contains(keyName)
-                || bucketKeys.contains(keyName)
-                || partitionKeys.contains(keyName)) {
-            throw new SchemaChangeException(
-                    "Can not change primary / partition / bucket / key column " + keyName);
-        }
+        throw new SchemaChangeException("Not support rename column now.");
     }
 }

@@ -21,8 +21,10 @@ import org.apache.fluss.annotation.PublicEvolving;
 import org.apache.fluss.exception.CorruptMessageException;
 import org.apache.fluss.memory.MemorySegment;
 import org.apache.fluss.metadata.LogFormat;
-import org.apache.fluss.row.PruneRow;
+import org.apache.fluss.row.InternalRow;
+import org.apache.fluss.row.ProjectedRow;
 import org.apache.fluss.row.arrow.ArrowReader;
+import org.apache.fluss.row.columnar.ColumnarRow;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.memory.BufferAllocator;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.fluss.types.DataType;
@@ -34,9 +36,11 @@ import org.apache.fluss.utils.crc.Crc32C;
 
 import java.nio.ByteBuffer;
 import java.util.NoSuchElementException;
+import java.util.function.Function;
 
 import static org.apache.fluss.record.LogRecordBatchFormat.BASE_OFFSET_OFFSET;
 import static org.apache.fluss.record.LogRecordBatchFormat.COMMIT_TIMESTAMP_OFFSET;
+import static org.apache.fluss.record.LogRecordBatchFormat.LENGTH_LENGTH;
 import static org.apache.fluss.record.LogRecordBatchFormat.LENGTH_OFFSET;
 import static org.apache.fluss.record.LogRecordBatchFormat.LOG_MAGIC_VALUE_V1;
 import static org.apache.fluss.record.LogRecordBatchFormat.LOG_OVERHEAD;
@@ -209,6 +213,7 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public CloseableIterator<LogRecord> records(ReadContext context) {
         if (getRecordCount() == 0) {
             return CloseableIterator.emptyIterator();
@@ -218,49 +223,29 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
         long timestamp = commitTimestamp();
         LogFormat logFormat = context.getLogFormat();
         RowType rowType = context.getRowType(schemaId);
+        Function<InternalRow, InternalRow> outputRowProcessor =
+                (row) -> {
+                    ProjectedRow projectedRow = context.getOutputProjectedRow(schemaId);
+                    if (projectedRow != null) {
+                        return projectedRow.replaceRow(row);
+                    } else {
+                        return row;
+                    }
+                };
 
-        CloseableIterator<LogRecord> records;
         switch (logFormat) {
             case ARROW:
-                records =
-                        columnRecordIterator(
-                                rowType,
-                                context.getVectorSchemaRoot(schemaId),
-                                context.getBufferAllocator(),
-                                timestamp);
-                break;
+                return columnRecordIterator(
+                        rowType,
+                        outputRowProcessor,
+                        context.getVectorSchemaRoot(schemaId),
+                        context.getBufferAllocator(),
+                        timestamp);
             case INDEXED:
-                records = rowRecordIterator(rowType, timestamp);
-                break;
+                return rowRecordIterator(rowType, outputRowProcessor, timestamp);
             default:
                 throw new IllegalArgumentException("Unsupported log format: " + logFormat);
         }
-
-        if (!context.isSchemaChange(schemaId)) {
-            return records;
-        }
-        PruneRow pruneRow = context.getPruneRow(schemaId);
-        return new CloseableIterator<>() {
-            @Override
-            public void close() {
-                records.close();
-            }
-
-            @Override
-            public boolean hasNext() {
-                return records.hasNext();
-            }
-
-            @Override
-            public LogRecord next() {
-                LogRecord next = records.next();
-                return new GenericRecord(
-                        next.logOffset(),
-                        next.timestamp(),
-                        next.getChangeType(),
-                        pruneRow.replaceRow(next.getRow()));
-            }
-        };
     }
 
     @Override
@@ -284,7 +269,10 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
         return MurmurHashUtils.hashBytes(segment, position, sizeInBytes());
     }
 
-    private CloseableIterator<LogRecord> rowRecordIterator(RowType rowType, long timestamp) {
+    private CloseableIterator<LogRecord> rowRecordIterator(
+            RowType rowType,
+            Function<InternalRow, InternalRow> outputRowProcessor,
+            long timestamp) {
         DataType[] fieldTypes = rowType.getChildren().toArray(new DataType[0]);
         return new LogRecordIterator() {
             int position = DefaultLogRecordBatch.this.position + recordBatchHeaderSize(magic);
@@ -293,8 +281,13 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
             @Override
             protected LogRecord readNext(long baseOffset) {
                 IndexedLogRecord logRecord =
-                        IndexedLogRecord.readFrom(
-                                segment, position, baseOffset + rowId, timestamp, fieldTypes);
+                        ProjectedIndexedLogRecord.readFrom(
+                                segment,
+                                position,
+                                baseOffset + rowId,
+                                timestamp,
+                                fieldTypes,
+                                outputRowProcessor);
                 rowId++;
                 position += logRecord.getSizeInBytes();
                 return logRecord;
@@ -311,7 +304,11 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
     }
 
     private CloseableIterator<LogRecord> columnRecordIterator(
-            RowType rowType, VectorSchemaRoot root, BufferAllocator allocator, long timestamp) {
+            RowType rowType,
+            Function<InternalRow, InternalRow> outputRowProcessor,
+            VectorSchemaRoot root,
+            BufferAllocator allocator,
+            long timestamp) {
         boolean isAppendOnly = (attributes() & APPEND_ONLY_FLAG_MASK) > 0;
         if (isAppendOnly) {
             // append only batch, no change type vector,
@@ -322,7 +319,7 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
             ArrowReader reader =
                     ArrowUtils.createArrowReader(
                             segment, arrowOffset, arrowLength, root, allocator, rowType);
-            return new ArrowLogRecordIterator(reader, timestamp) {
+            return new ArrowLogRecordIterator(reader, timestamp, outputRowProcessor) {
                 @Override
                 protected ChangeType getChangeType(int rowId) {
                     return ChangeType.APPEND_ONLY;
@@ -340,7 +337,7 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
             ArrowReader reader =
                     ArrowUtils.createArrowReader(
                             segment, arrowOffset, arrowLength, root, allocator, rowType);
-            return new ArrowLogRecordIterator(reader, timestamp) {
+            return new ArrowLogRecordIterator(reader, timestamp, outputRowProcessor) {
                 @Override
                 protected ChangeType getChangeType(int rowId) {
                     return changeTypeVector.getChangeType(rowId);
@@ -354,10 +351,15 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
         private final ArrowReader reader;
         private final long timestamp;
         private int rowId = 0;
+        private final Function<InternalRow, InternalRow> outputRowProcessor;
 
-        private ArrowLogRecordIterator(ArrowReader reader, long timestamp) {
+        private ArrowLogRecordIterator(
+                ArrowReader reader,
+                long timestamp,
+                Function<InternalRow, InternalRow> outputRowProcessor) {
             this.reader = reader;
             this.timestamp = timestamp;
+            this.outputRowProcessor = outputRowProcessor;
         }
 
         protected abstract ChangeType getChangeType(int rowId);
@@ -369,12 +371,13 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
 
         @Override
         protected LogRecord readNext(long baseOffset) {
+            ColumnarRow originalRow = reader.read(rowId);
             LogRecord record =
                     new GenericRecord(
                             baseOffset + rowId,
                             timestamp,
                             getChangeType(rowId),
-                            reader.read(rowId));
+                            outputRowProcessor.apply(originalRow));
             rowId++;
             return record;
         }
@@ -442,6 +445,40 @@ public class DefaultLogRecordBatch implements LogRecordBatch {
         @Override
         public void remove() {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    private static class ProjectedIndexedLogRecord extends IndexedLogRecord {
+        private final Function<InternalRow, InternalRow> outputRowProcessor;
+
+        ProjectedIndexedLogRecord(
+                long logOffset,
+                long timestamp,
+                DataType[] fieldTypes,
+                Function<InternalRow, InternalRow> outputRowProcessor) {
+            super(logOffset, timestamp, fieldTypes);
+            this.outputRowProcessor = outputRowProcessor;
+        }
+
+        public static IndexedLogRecord readFrom(
+                MemorySegment segment,
+                int position,
+                long logOffset,
+                long logTimestamp,
+                DataType[] colTypes,
+                Function<InternalRow, InternalRow> outputRowProcessor) {
+            int sizeInBytes = segment.getInt(position);
+            ProjectedIndexedLogRecord logRecord =
+                    new ProjectedIndexedLogRecord(
+                            logOffset, logTimestamp, colTypes, outputRowProcessor);
+            logRecord.pointTo(segment, position, sizeInBytes + LENGTH_LENGTH);
+            return logRecord;
+        }
+
+        @Override
+        public InternalRow getRow() {
+            InternalRow row = super.getRow();
+            return outputRowProcessor.apply(row);
         }
     }
 }

@@ -21,13 +21,11 @@ import org.apache.fluss.memory.MemorySegment;
 import org.apache.fluss.memory.PreAllocatedPagedOutputView;
 import org.apache.fluss.memory.TestingMemorySegmentPool;
 import org.apache.fluss.memory.UnmanagedPagedOutputView;
-import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.record.LogRecord;
 import org.apache.fluss.record.LogRecordBatch;
 import org.apache.fluss.record.LogRecordReadContext;
 import org.apache.fluss.record.MemoryLogRecords;
-import org.apache.fluss.record.TestingSchemaGetter;
 import org.apache.fluss.record.bytesview.BytesView;
 import org.apache.fluss.row.GenericRow;
 import org.apache.fluss.row.arrow.ArrowWriter;
@@ -49,10 +47,9 @@ import static org.apache.fluss.compression.ArrowCompressionInfo.DEFAULT_COMPRESS
 import static org.apache.fluss.record.LogRecordReadContext.createArrowReadContext;
 import static org.apache.fluss.record.TestData.DATA1_PHYSICAL_TABLE_PATH;
 import static org.apache.fluss.record.TestData.DATA1_ROW_TYPE;
-import static org.apache.fluss.record.TestData.DATA1_SCHEMA;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_ID;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_INFO;
-import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
+import static org.apache.fluss.record.TestData.TEST_SCHEMA_GETTER;
 import static org.apache.fluss.testutils.DataTestUtils.row;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -98,10 +95,11 @@ public class ArrowLogWriteBatchTest {
         MemoryLogRecords records = MemoryLogRecords.pointToBytesView(bytesView);
         LogRecordBatch batch = records.batches().iterator().next();
         assertThat(batch.getRecordCount()).isEqualTo(count);
-        SchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         try (LogRecordReadContext readContext =
                         createArrowReadContext(
-                                DATA1_ROW_TYPE, DATA1_TABLE_INFO.getSchemaId(), schemaGetter);
+                                DATA1_ROW_TYPE,
+                                DATA1_TABLE_INFO.getSchemaId(),
+                                TEST_SCHEMA_GETTER);
                 CloseableIterator<LogRecord> recordsIter = batch.records(readContext)) {
             int readCount = 0;
             while (recordsIter.hasNext()) {
@@ -158,10 +156,11 @@ public class ArrowLogWriteBatchTest {
         MemoryLogRecords records = MemoryLogRecords.pointToBytesView(bytesView);
         LogRecordBatch batch = records.batches().iterator().next();
         assertThat(batch.getRecordCount()).isEqualTo(count);
-        SchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         try (LogRecordReadContext readContext =
                         createArrowReadContext(
-                                DATA1_ROW_TYPE, DATA1_TABLE_INFO.getSchemaId(), schemaGetter);
+                                DATA1_ROW_TYPE,
+                                DATA1_TABLE_INFO.getSchemaId(),
+                                TEST_SCHEMA_GETTER);
                 CloseableIterator<LogRecord> recordsIter = batch.records(readContext)) {
             int readCount = 0;
             while (recordsIter.hasNext()) {

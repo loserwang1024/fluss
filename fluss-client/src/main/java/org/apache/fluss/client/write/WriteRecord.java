@@ -206,10 +206,6 @@ public final class WriteRecord {
         return estimatedSizeInBytes;
     }
 
-    public TableInfo getTableInfo() {
-        return tableInfo;
-    }
-
     public int getSchemaId() {
         return tableInfo.getSchemaId();
     }

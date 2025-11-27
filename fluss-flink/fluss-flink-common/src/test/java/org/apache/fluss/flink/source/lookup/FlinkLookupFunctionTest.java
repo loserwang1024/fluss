@@ -31,6 +31,7 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.functions.AsyncLookupFunction;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.util.Collector;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -140,11 +141,10 @@ class FlinkLookupFunctionTest extends FlinkTestBase {
                         "4: null");
     }
 
-    @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    void testDropColumn(boolean schemaNotMatch) throws Exception {
-        TablePath tablePath = TablePath.of(DEFAULT_DB, "sync-add-column-" + schemaNotMatch);
-        prepareData(tablePath, 3, schemaNotMatch);
+    @Test
+    void testSchemaChange() throws Exception {
+        TablePath tablePath = TablePath.of(DEFAULT_DB, "sync-add-column");
+        prepareData(tablePath, 3, false);
 
         RowType flinkRowType =
                 FlinkConversions.toFlinkRowType(DEFAULT_PK_TABLE_SCHEMA.getRowType());
@@ -153,7 +153,6 @@ class FlinkLookupFunctionTest extends FlinkTestBase {
                         clientConf,
                         tablePath,
                         flinkRowType,
-                        LookupOptions.MAX_RETRIES.defaultValue(),
                         createPrimaryKeyLookupNormalizer(new int[] {0}, flinkRowType),
                         null);
 
@@ -163,13 +162,20 @@ class FlinkLookupFunctionTest extends FlinkTestBase {
 
         // alter table after lookup function is created.
         admin.alterTable(
-                        tablePath, Collections.singletonList(TableChange.dropColumn("name")), false)
+                        tablePath,
+                        Collections.singletonList(
+                                TableChange.addColumn(
+                                        "new_column",
+                                        DataTypes.INT(),
+                                        null,
+                                        TableChange.ColumnPosition.last())),
+                        false)
                 .get();
         FLUSS_CLUSTER_EXTENSION.waitAllSchemaSync(tablePath, 2);
 
         try (Table table = conn.getTable(tablePath)) {
             UpsertWriter upsertWriter = table.newUpsert().createWriter();
-            upsertWriter.upsert(schemaNotMatch ? row(3, 3) : row(3));
+            upsertWriter.upsert(row(3, "name3", 3));
             upsertWriter.flush();
         }
 
@@ -185,17 +191,16 @@ class FlinkLookupFunctionTest extends FlinkTestBase {
                         .sorted()
                         .collect(Collectors.toList());
         assertThat(result)
-                .containsExactly("+I(0,name0)", "+I(1,name1)", "+I(2,name2)", "+I(3,null)");
+                .containsExactly("+I(0,name0)", "+I(1,name1)", "+I(2,name2)", "+I(3,name3)");
         lookupFunction.close();
 
         // start lookup job after schema change.
-        admin.getTableSchema(tablePath, 2);
+        admin.getTableSchema(tablePath, 1).get();
         lookupFunction =
                 new FlinkLookupFunction(
                         clientConf,
                         tablePath,
                         flinkRowType,
-                        LookupOptions.MAX_RETRIES.defaultValue(),
                         createPrimaryKeyLookupNormalizer(new int[] {0}, flinkRowType),
                         null);
         collector = new ListOutputCollector();
@@ -209,7 +214,8 @@ class FlinkLookupFunctionTest extends FlinkTestBase {
                         .map(RowData::toString)
                         .sorted()
                         .collect(Collectors.toList());
-        assertThat(result).containsExactly("+I(0,null)", "+I(1,null)", "+I(2,null)", "+I(3,null)");
+        assertThat(result)
+                .containsExactly("+I(0,name0)", "+I(1,name1)", "+I(2,name2)", "+I(3,name3)");
         lookupFunction.close();
     }
 

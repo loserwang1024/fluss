@@ -921,6 +921,8 @@ public final class RecordAccumulator {
 
         writerBufferPool.close();
         arrowWriterPool.close();
+        // Release all the memory segments.
+        bufferAllocator.releaseBytes(bufferAllocator.getAllocatedMemory());
         bufferAllocator.close();
     }
 

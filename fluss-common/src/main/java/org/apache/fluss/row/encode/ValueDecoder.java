@@ -73,7 +73,7 @@ public class ValueDecoder {
         public final short schemaId;
         public final BinaryRow row;
 
-        public Value(short schemaId, BinaryRow row) {
+        private Value(short schemaId, BinaryRow row) {
             this.schemaId = schemaId;
             this.row = row;
         }

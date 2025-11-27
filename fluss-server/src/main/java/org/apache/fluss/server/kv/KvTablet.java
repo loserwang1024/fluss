@@ -40,7 +40,6 @@ import org.apache.fluss.record.KvRecordBatch;
 import org.apache.fluss.record.KvRecordReadContext;
 import org.apache.fluss.row.InternalRow;
 import org.apache.fluss.row.ProjectedRow;
-import org.apache.fluss.row.PruneRow;
 import org.apache.fluss.row.arrow.ArrowWriterPool;
 import org.apache.fluss.row.arrow.ArrowWriterProvider;
 import org.apache.fluss.row.encode.ValueDecoder;
@@ -304,7 +303,8 @@ public final class KvTablet {
                                 KvRecordReadContext.createReadContext(kvFormat, schemaGetter);
 
                         // replace new row with current schema if the schema id is older than now
-                        ProjectedRow projectedRow = PruneRow.from(schemaOfNewData, latestSchema);
+                        ProjectedRow projectedRow =
+                                ProjectedRow.from(schemaOfNewData, latestSchema);
                         ValueDecoder valueDecoder = new ValueDecoder(schemaGetter, kvFormat);
                         for (KvRecord kvRecord : kvRecords.records(readContext)) {
 
@@ -343,7 +343,7 @@ public final class KvTablet {
                                         Schema schemaOfOldData =
                                                 schemaGetter.getSchema(oldRowAndSchemaId.schemaId);
                                         oldRow =
-                                                PruneRow.from(schemaOfOldData, latestSchema)
+                                                ProjectedRow.from(schemaOfOldData, latestSchema)
                                                         .replaceRow(oldRow);
                                     }
                                     InternalRow newRow = currentMerger.delete(oldRow);
@@ -380,7 +380,7 @@ public final class KvTablet {
                                         Schema schemaOfOldData =
                                                 schemaGetter.getSchema(oldRowAndSchemaId.schemaId);
                                         oldRow =
-                                                PruneRow.from(schemaOfOldData, latestSchema)
+                                                ProjectedRow.from(schemaOfOldData, latestSchema)
                                                         .replaceRow(oldRow);
                                     }
 

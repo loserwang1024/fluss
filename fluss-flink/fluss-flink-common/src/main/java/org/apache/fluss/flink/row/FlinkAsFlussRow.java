@@ -68,7 +68,25 @@ public class FlinkAsFlussRow implements InternalRow {
 
     @Override
     public boolean isNullAt(int pos) {
-        return (indexMapping != null && indexMapping[pos] == -1) || flinkRow.isNullAt(pos);
+        // if no mapping, means that the field is not found in Flink, just ignore it.
+        if ((indexMapping != null && indexMapping[pos] == -1)) {
+            return true;
+        }
+
+        // If pos is larger than flinkRow.getArity(), it indicates that the Fluss table's data type
+        // is wider than the data provided by Flink.
+        // This often occurs when a schema change happens to the catalog table before job restart.
+        // Only appending columns at the end is compatible, just need to  ignore the trailing
+        // columns.
+        // Other types of schema changes (e.g., dropping columns) would lead to incompatibility.
+        // Therefore, Fluss currently only supports appending columns, and here we simply ignore any
+        // extra columns.
+        int flussPos = indexMapping == null ? pos : indexMapping[pos];
+        if (flussPos >= flinkRow.getArity()) {
+            return true;
+        }
+
+        return flinkRow.isNullAt(flussPos);
     }
 
     @Override

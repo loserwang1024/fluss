@@ -82,6 +82,7 @@ import static org.apache.fluss.record.TestData.DATA1_ROW_TYPE;
 import static org.apache.fluss.record.TestData.DATA1_SCHEMA_PK;
 import static org.apache.fluss.record.TestData.DEFAULT_MAGIC;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
+import static org.apache.fluss.record.TestData.TEST_SCHEMA_GETTER;
 import static org.apache.fluss.testutils.LogRecordBatchAssert.assertThatLogRecordBatch;
 import static org.apache.fluss.utils.FlussPaths.remoteLogDir;
 import static org.apache.fluss.utils.FlussPaths.remoteLogSegmentDir;
@@ -639,10 +640,10 @@ public class DataTestUtils {
                 fieldGetter, dataTypes, logRecord.getRow(), expectedFieldAndRowKind.f1);
     }
 
-    // todo: remove it.
     public static void assertLogRecordsEquals(
             RowType rowType, LogRecords logRecords, List<Object[]> expectedValue) {
-        throw new UnsupportedOperationException();
+        assertLogRecordsEquals(
+                DEFAULT_SCHEMA_ID, rowType, logRecords, expectedValue, TEST_SCHEMA_GETTER);
     }
 
     public static void assertLogRecordsEquals(
@@ -651,12 +652,6 @@ public class DataTestUtils {
             List<Object[]> expectedValue,
             SchemaGetter schemaGetter) {
         assertLogRecordsEquals(DEFAULT_SCHEMA_ID, rowType, logRecords, expectedValue, schemaGetter);
-    }
-
-    // todo: remove it.
-    public static void assertLogRecordsEquals(
-            int schemaId, RowType rowType, LogRecords logRecords, List<Object[]> expectedValue) {
-        throw new UnsupportedOperationException();
     }
 
     public static void assertLogRecordsEquals(
@@ -677,16 +672,8 @@ public class DataTestUtils {
             RowType rowType,
             LogRecords logRecords,
             List<Tuple2<ChangeType, Object[]>> expectedValue) {
-        assertLogRecordsEqualsWithRowKind(DEFAULT_SCHEMA_ID, rowType, logRecords, expectedValue);
-    }
-
-    // todo: remove it.
-    public static void assertLogRecordsEqualsWithRowKind(
-            int schemaId,
-            RowType rowType,
-            LogRecords logRecords,
-            List<Tuple2<ChangeType, Object[]>> expectedValue) {
-        throw new UnsupportedOperationException();
+        assertLogRecordsEqualsWithRowKind(
+                DEFAULT_SCHEMA_ID, rowType, logRecords, expectedValue, TEST_SCHEMA_GETTER);
     }
 
     public static void assertLogRecordsEqualsWithRowKind(

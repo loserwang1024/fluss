@@ -24,7 +24,7 @@ import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.metadata.TableInfo;
 import org.apache.fluss.row.InternalRow;
 import org.apache.fluss.row.InternalRow.FieldGetter;
-import org.apache.fluss.row.PruneRow;
+import org.apache.fluss.row.ProjectedRow;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.memory.BufferAllocator;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.memory.RootAllocator;
 import org.apache.fluss.shaded.arrow.org.apache.arrow.vector.VectorSchemaRoot;
@@ -198,7 +198,7 @@ public class LogRecordReadContext implements LogRecordBatch.ReadContext, AutoClo
 
     @Override
     public RowType getRowType(int schemaId) {
-        if (!isSchemaChange(schemaId)) {
+        if (isSameRowType(schemaId)) {
             return dataRowType;
         }
 
@@ -218,12 +218,6 @@ public class LogRecordReadContext implements LogRecordBatch.ReadContext, AutoClo
 
     @Override
     public VectorSchemaRoot getVectorSchemaRoot(int schemaId) {
-        //        checkArgument(
-        //                schemaId == this.schemaId,
-        //                "The schemaId (%s) in the record batch is not the same as the context
-        // (%s).",
-        //                schemaId,
-        //                this.schemaId);
         if (logFormat != LogFormat.ARROW) {
             throw new IllegalArgumentException(
                     "Only Arrow log format provides vector schema root.");
@@ -251,16 +245,15 @@ public class LogRecordReadContext implements LogRecordBatch.ReadContext, AutoClo
         return bufferAllocator;
     }
 
+    @Nullable
     @Override
-    public boolean isSchemaChange(int schemaId) {
-        return expectedSchemaId != schemaId && !isProjectionPushDowned();
-    }
-
-    @Override
-    public PruneRow getPruneRow(int schemaId) {
+    public ProjectedRow getOutputProjectedRow(int schemaId) {
+        if (isSameRowType(schemaId)) {
+            return null;
+        }
         Schema originSchema = schemaGetter.getSchema(schemaId);
         Schema expectedSchema = schemaGetter.getSchema(expectedSchemaId);
-        return PruneRow.from(originSchema, expectedSchema);
+        return ProjectedRow.from(originSchema, expectedSchema);
     }
 
     public void close() {
@@ -271,6 +264,10 @@ public class LogRecordReadContext implements LogRecordBatch.ReadContext, AutoClo
         if (bufferAllocator != null) {
             bufferAllocator.close();
         }
+    }
+
+    private boolean isSameRowType(int schemaId) {
+        return expectedSchemaId == schemaId || isProjectionPushDowned();
     }
 
     private static FieldGetter[] buildProjectedFieldGetters(RowType rowType, int[] selectedFields) {

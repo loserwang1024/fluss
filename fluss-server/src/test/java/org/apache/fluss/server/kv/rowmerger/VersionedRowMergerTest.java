@@ -21,7 +21,7 @@ import org.apache.fluss.metadata.DeleteBehavior;
 import org.apache.fluss.metadata.Schema;
 import org.apache.fluss.row.BinaryRow;
 import org.apache.fluss.row.InternalRow;
-import org.apache.fluss.row.PruneRow;
+import org.apache.fluss.row.ProjectedRow;
 import org.apache.fluss.row.TimestampLtz;
 import org.apache.fluss.row.TimestampNtz;
 import org.apache.fluss.types.DataType;
@@ -185,7 +185,7 @@ class VersionedRowMergerTest {
         rowType = schema2.getRowType();
         merger.configureTargetColumns(null, (short) 2, schema2);
 
-        oldRow = PruneRow.from(schema, schema2).replaceRow(oldRow);
+        oldRow = ProjectedRow.from(schema, schema2).replaceRow(oldRow);
         newRow = compactedRow(rowType, new Object[] {"a", 2, "dummy"});
         assertThat(merger.merge(oldRow, newRow)).isSameAs(oldRow);
         newRow = compactedRow(rowType, new Object[] {"b", 20, "dummy"});

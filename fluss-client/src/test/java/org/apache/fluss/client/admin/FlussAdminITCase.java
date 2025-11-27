@@ -316,8 +316,7 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
                                                         TableChange.dropColumn("id")),
                                                 false)
                                         .get())
-                .hasMessageContaining(
-                        "Can not change primary / partition / bucket / key column id");
+                .hasMessageContaining("Not support drop column now.");
         assertThatThrownBy(
                         () ->
                                 admin.alterTable(
@@ -326,8 +325,7 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
                                                         TableChange.renameColumn("id", "id2")),
                                                 false)
                                         .get())
-                .hasMessageContaining(
-                        "Can not change primary / partition / bucket / key column id");
+                .hasMessageContaining("Not support rename column now.");
         assertThatThrownBy(
                         () ->
                                 admin.alterTable(
@@ -358,14 +356,12 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
 
         admin.alterTable(
                         tablePath,
-                        Arrays.asList(
+                        Collections.singletonList(
                                 TableChange.addColumn(
                                         "c1",
                                         DataTypes.STRING(),
                                         null,
-                                        TableChange.ColumnPosition.last()),
-                                TableChange.dropColumn("name"),
-                                TableChange.renameColumn("age", "age2")),
+                                        TableChange.ColumnPosition.last())),
                         false)
                 .get();
 
@@ -377,7 +373,12 @@ class FlussAdminITCase extends ClientToServerITCaseBase {
                                         new Schema.Column(
                                                 "id", DataTypes.INT(), "person id", (short) 0),
                                         new Schema.Column(
-                                                "age2", DataTypes.INT(), "person age", (short) 2),
+                                                "name",
+                                                DataTypes.STRING(),
+                                                "person name",
+                                                (short) 1),
+                                        new Schema.Column(
+                                                "age", DataTypes.INT(), "person age", (short) 2),
                                         new Schema.Column(
                                                 "c1", DataTypes.STRING(), null, (short) 3)))
                         .build();

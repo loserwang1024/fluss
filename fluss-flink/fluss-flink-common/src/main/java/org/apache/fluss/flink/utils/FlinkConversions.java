@@ -408,14 +408,6 @@ public class FlinkConversions {
             return Collections.singletonList(
                     convertSetOption(
                             (org.apache.flink.table.catalog.TableChange.SetOption) tableChange));
-        } else if (tableChange instanceof org.apache.flink.table.catalog.TableChange.ResetOption) {
-            return Collections.singletonList(
-                    convertResetOption(
-                            (org.apache.flink.table.catalog.TableChange.ResetOption) tableChange));
-        } else if (tableChange instanceof ModifyRefreshStatus
-                || tableChange instanceof ModifyRefreshHandler) {
-            // MaterializedTableChange may produce multiple fluss TableChange.
-            return convertMaterializedTableChange(tableChange);
         } else if (tableChange instanceof org.apache.flink.table.catalog.TableChange.AddColumn) {
             org.apache.flink.table.catalog.TableChange.AddColumn addColumn =
                     (org.apache.flink.table.catalog.TableChange.AddColumn) tableChange;
@@ -454,6 +446,14 @@ public class FlinkConversions {
                             toFlussType(newColumn.getDataType()),
                             newColumn.getComment().orElse(null),
                             toFlussColumnPosition(modifyColumn.getNewPosition())));
+        } else if (tableChange instanceof org.apache.flink.table.catalog.TableChange.ResetOption) {
+            return Collections.singletonList(
+                    convertResetOption(
+                            (org.apache.flink.table.catalog.TableChange.ResetOption) tableChange));
+        } else if (tableChange instanceof ModifyRefreshStatus
+                || tableChange instanceof ModifyRefreshHandler) {
+            // MaterializedTableChange may produce multiple fluss TableChange.
+            return convertMaterializedTableChange(tableChange);
         } else {
             throw new UnsupportedOperationException(
                     String.format("Unsupported flink table change: %s.", tableChange));

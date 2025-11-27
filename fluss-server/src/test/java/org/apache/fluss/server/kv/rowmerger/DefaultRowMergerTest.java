@@ -22,7 +22,7 @@ import org.apache.fluss.metadata.KvFormat;
 import org.apache.fluss.metadata.Schema;
 import org.apache.fluss.row.BinaryRow;
 import org.apache.fluss.row.InternalRow;
-import org.apache.fluss.row.PruneRow;
+import org.apache.fluss.row.ProjectedRow;
 import org.apache.fluss.types.DataTypes;
 
 import org.junit.jupiter.params.ParameterizedTest;
@@ -83,7 +83,7 @@ class DefaultRowMergerTest {
 
         // Test schema change.
         merger.configureTargetColumns(null, (byte) 2, SCHEMA_2);
-        oldRow = PruneRow.from(SCHEMA, SCHEMA_2).replaceRow(oldRow);
+        oldRow = ProjectedRow.from(SCHEMA, SCHEMA_2).replaceRow(oldRow);
         newRow = createBinaryRow("20", 1, "new2");
         assertThat(merger.merge(oldRow, newRow)).isSameAs(newRow);
         assertThat(merger.delete(newRow)).isNull();
@@ -108,7 +108,7 @@ class DefaultRowMergerTest {
 
         // schema change then partial update (except name column).
         partialMerger = merger.configureTargetColumns(new int[] {0, 1}, (byte) 2, SCHEMA_2);
-        oldRow = PruneRow.from(SCHEMA, SCHEMA_2).replaceRow(oldRow);
+        oldRow = ProjectedRow.from(SCHEMA, SCHEMA_2).replaceRow(oldRow);
         BinaryRow newRow = createBinaryRow("20", 1, null);
         BinaryRow mergeRow = createBinaryRow("20", 1, "old");
         assertThat(partialMerger.merge(oldRow, newRow)).isEqualTo(mergeRow);

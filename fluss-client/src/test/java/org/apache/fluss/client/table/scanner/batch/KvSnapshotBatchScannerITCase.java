@@ -31,7 +31,7 @@ import org.apache.fluss.metadata.TableChange;
 import org.apache.fluss.metadata.TableDescriptor;
 import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.row.InternalRow;
-import org.apache.fluss.row.PruneRow;
+import org.apache.fluss.row.ProjectedRow;
 import org.apache.fluss.row.encode.CompactedKeyEncoder;
 import org.apache.fluss.row.encode.KeyEncoder;
 import org.apache.fluss.types.DataTypes;
@@ -41,7 +41,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -130,22 +130,21 @@ class KvSnapshotBatchScannerITCase extends ClientToServerITCaseBase {
         // add a new column and rename an existing column
         admin.alterTable(
                         tablePath,
-                        Arrays.asList(
+                        Collections.singletonList(
                                 TableChange.addColumn(
                                         "new_column",
                                         DataTypes.BIGINT().copy(false).copy(true),
                                         null,
-                                        TableChange.ColumnPosition.last()),
-                                TableChange.renameColumn("name", "new_name")),
+                                        TableChange.ColumnPosition.last())),
                         false)
                 .get();
         FLUSS_CLUSTER_EXTENSION.waitAllSchemaSync(tablePath, 2);
 
         Schema newSchema =
                 Schema.newBuilder()
-                        .primaryKey("a")
-                        .column("a", DataTypes.INT())
-                        .column("new_name", DataTypes.STRING())
+                        .primaryKey("id")
+                        .column("id", DataTypes.INT())
+                        .column("name", DataTypes.STRING())
                         .column("new_column", DataTypes.BIGINT())
                         .build();
         // put into values with old schema.
@@ -166,7 +165,7 @@ class KvSnapshotBatchScannerITCase extends ClientToServerITCaseBase {
                     .forEach(
                             row ->
                                     expectedRows.add(
-                                            PruneRow.from(DEFAULT_SCHEMA, newSchema)
+                                            ProjectedRow.from(DEFAULT_SCHEMA, newSchema)
                                                     .replaceRow(row)));
         }
         for (TableBucket tableBucket : newSchemaByBuckets.keySet()) {

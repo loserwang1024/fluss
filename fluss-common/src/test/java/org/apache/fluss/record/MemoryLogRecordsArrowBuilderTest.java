@@ -24,7 +24,6 @@ import org.apache.fluss.config.Configuration;
 import org.apache.fluss.config.MemorySize;
 import org.apache.fluss.memory.ManagedPagedOutputView;
 import org.apache.fluss.memory.TestingMemorySegmentPool;
-import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.row.InternalRow;
 import org.apache.fluss.row.arrow.ArrowWriter;
 import org.apache.fluss.row.arrow.ArrowWriterPool;
@@ -58,8 +57,8 @@ import static org.apache.fluss.record.LogRecordBatchFormat.LOG_MAGIC_VALUE_V0;
 import static org.apache.fluss.record.LogRecordBatchFormat.LOG_MAGIC_VALUE_V1;
 import static org.apache.fluss.record.TestData.DATA1;
 import static org.apache.fluss.record.TestData.DATA1_ROW_TYPE;
-import static org.apache.fluss.record.TestData.DATA1_SCHEMA;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
+import static org.apache.fluss.record.TestData.TEST_SCHEMA_GETTER;
 import static org.apache.fluss.row.arrow.ArrowWriter.BUFFER_USAGE_RATIO;
 import static org.apache.fluss.testutils.DataTestUtils.assertLogRecordsEquals;
 import static org.apache.fluss.testutils.DataTestUtils.row;
@@ -111,7 +110,6 @@ public class MemoryLogRecordsArrowBuilderTest {
     @ParameterizedTest
     @ValueSource(bytes = {LOG_MAGIC_VALUE_V0, LOG_MAGIC_VALUE_V1})
     void testAppend(byte recordBatchMagic) throws Exception {
-        TestingSchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         int maxSizeInBytes = 1024;
         ArrowWriter writer =
                 provider.getOrCreateWriter(
@@ -142,13 +140,12 @@ public class MemoryLogRecordsArrowBuilderTest {
                         "Tried to append a record, but MemoryLogRecordsArrowBuilder is closed for record appends");
         assertThat(builder.isClosed()).isTrue();
         MemoryLogRecords records = MemoryLogRecords.pointToBytesView(builder.build());
-        assertLogRecordsEquals(DATA1_ROW_TYPE, records, expectedResult, schemaGetter);
+        assertLogRecordsEquals(DATA1_ROW_TYPE, records, expectedResult);
     }
 
     @ParameterizedTest
     @MethodSource("compressionInfos")
     void testCompression(ArrowCompressionInfo compressionInfo) throws Exception {
-        TestingSchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         int maxSizeInBytes = 1024;
         // create a compression-able data set.
         List<Object[]> dataSet =
@@ -176,7 +173,7 @@ public class MemoryLogRecordsArrowBuilderTest {
         builder.close();
         MemoryLogRecords records1 = MemoryLogRecords.pointToBytesView(builder.build());
         int sizeInBytes1 = records1.sizeInBytes();
-        assertLogRecordsEquals(DATA1_ROW_TYPE, records1, dataSet, schemaGetter);
+        assertLogRecordsEquals(DATA1_ROW_TYPE, records1, dataSet);
 
         // second create a compression batch.
         ArrowWriter writer2 =
@@ -190,7 +187,7 @@ public class MemoryLogRecordsArrowBuilderTest {
         builder2.close();
         MemoryLogRecords records2 = MemoryLogRecords.pointToBytesView(builder2.build());
         int sizeInBytes2 = records2.sizeInBytes();
-        assertLogRecordsEquals(DATA1_ROW_TYPE, records2, dataSet, schemaGetter);
+        assertLogRecordsEquals(DATA1_ROW_TYPE, records2, dataSet);
 
         // compare the size of two batches.
         assertThat(sizeInBytes1).isGreaterThan(sizeInBytes2);
@@ -282,7 +279,7 @@ public class MemoryLogRecordsArrowBuilderTest {
         assertThat(logRecordBatch.lastLogOffset()).isEqualTo(0);
         assertThat(logRecordBatch.nextLogOffset()).isEqualTo(1);
         assertThat(logRecordBatch.baseLogOffset()).isEqualTo(0);
-        TestingSchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
+        TestingSchemaGetter schemaGetter = TEST_SCHEMA_GETTER;
         try (LogRecordReadContext readContext =
                         LogRecordReadContext.createArrowReadContext(
                                 DATA1_ROW_TYPE, DEFAULT_SCHEMA_ID, schemaGetter);
@@ -318,7 +315,6 @@ public class MemoryLogRecordsArrowBuilderTest {
 
     @Test
     void testResetWriterState() throws Exception {
-        SchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         int maxSizeInBytes = 1024;
         ArrowWriter writer =
                 provider.getOrCreateWriter(
@@ -340,7 +336,7 @@ public class MemoryLogRecordsArrowBuilderTest {
         builder.close();
         assertThat(builder.isClosed()).isTrue();
         MemoryLogRecords records = MemoryLogRecords.pointToBytesView(builder.build());
-        assertLogRecordsEquals(DATA1_ROW_TYPE, records, expectedResult, schemaGetter);
+        assertLogRecordsEquals(DATA1_ROW_TYPE, records, expectedResult);
         LogRecordBatch recordBatch = records.batches().iterator().next();
         assertThat(recordBatch.writerId()).isEqualTo(1L);
         assertThat(recordBatch.batchSequence()).isEqualTo(0);
@@ -349,7 +345,7 @@ public class MemoryLogRecordsArrowBuilderTest {
         // failed and the batch is re-enqueue to send with different write state).
         builder.setWriterState(1L, 1);
         records = MemoryLogRecords.pointToBytesView(builder.build());
-        assertLogRecordsEquals(DATA1_ROW_TYPE, records, expectedResult, schemaGetter);
+        assertLogRecordsEquals(DATA1_ROW_TYPE, records, expectedResult);
         recordBatch = records.batches().iterator().next();
         assertThat(recordBatch.writerId()).isEqualTo(1L);
         assertThat(recordBatch.batchSequence()).isEqualTo(1);

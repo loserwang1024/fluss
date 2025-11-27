@@ -20,7 +20,6 @@ package org.apache.fluss.client.table.scanner.log;
 import org.apache.fluss.exception.WakeupException;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.record.LogRecordReadContext;
-import org.apache.fluss.record.TestingSchemaGetter;
 import org.apache.fluss.rpc.entity.FetchLogResultForBucket;
 
 import org.junit.jupiter.api.AfterEach;
@@ -42,8 +41,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.apache.fluss.record.TestData.DATA1;
 import static org.apache.fluss.record.TestData.DATA1_ROW_TYPE;
-import static org.apache.fluss.record.TestData.DATA1_SCHEMA;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
+import static org.apache.fluss.record.TestData.TEST_SCHEMA_GETTER;
 import static org.apache.fluss.testutils.DataTestUtils.genMemoryLogRecordsByObject;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -64,10 +63,9 @@ public class LogFetchBufferTest {
         scanBuckets.put(tableBucket3, 0L);
         logScannerStatus = new LogScannerStatus();
         logScannerStatus.assignScanBuckets(scanBuckets);
-        TestingSchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         readContext =
                 LogRecordReadContext.createArrowReadContext(
-                        DATA1_ROW_TYPE, DEFAULT_SCHEMA_ID, schemaGetter);
+                        DATA1_ROW_TYPE, DEFAULT_SCHEMA_ID, TEST_SCHEMA_GETTER);
     }
 
     @AfterEach

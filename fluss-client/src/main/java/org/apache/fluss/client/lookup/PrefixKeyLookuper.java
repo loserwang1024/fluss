@@ -27,7 +27,7 @@ import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableInfo;
 import org.apache.fluss.row.InternalRow;
-import org.apache.fluss.row.PruneRow;
+import org.apache.fluss.row.ProjectedRow;
 import org.apache.fluss.row.encode.KeyEncoder;
 import org.apache.fluss.row.encode.ValueDecoder;
 import org.apache.fluss.types.RowType;
@@ -185,7 +185,7 @@ class PrefixKeyLookuper implements Lookuper {
                                 } else {
                                     Schema schema = schemaGetter.getSchema(value.schemaId);
                                     row =
-                                            PruneRow.from(schema, tableInfo.getSchema())
+                                            ProjectedRow.from(schema, tableInfo.getSchema())
                                                     .replaceRow(value.row);
                                 }
                                 rowList.add(row);

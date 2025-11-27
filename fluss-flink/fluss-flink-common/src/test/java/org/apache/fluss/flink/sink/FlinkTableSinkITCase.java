@@ -813,6 +813,21 @@ abstract class FlinkTableSinkITCase extends AbstractTestBase {
                         "-U[4, 3504, Seattle]",
                         "+U[4, 3504, New York]");
         assertResultsIgnoreOrder(changelogIter, expectedRows, true);
+
+        // test schema evolution.
+        tBatchEnv
+                .executeSql(String.format("alter table %s add new_added_column int", tableName))
+                .await();
+        FLUSS_CLUSTER_EXTENSION.waitAllSchemaSync(TablePath.of(DEFAULT_DB, tableName), 2);
+        tBatchEnv
+                .executeSql("UPDATE " + tableName + " SET new_added_column = 2 WHERE a = 4")
+                .await();
+        CloseableIterator<Row> row5 =
+                tBatchEnv
+                        .executeSql(String.format("select * from %s WHERE a = 4", tableName))
+                        .collect();
+        expected = Collections.singletonList("+I[4, 3504, New York, 2]");
+        assertResultsIgnoreOrder(row5, expected, true);
     }
 
     @Test

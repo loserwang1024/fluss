@@ -336,20 +336,20 @@ public final class TableInfo {
     }
 
     /** Replace a TableInfo with a new SchemaInfo. */
-    public static TableInfo of(TableInfo tableInfo, SchemaInfo schemaInfo) {
+    public TableInfo withNewSchema(SchemaInfo schemaInfo) {
         return new TableInfo(
-                tableInfo.getTablePath(),
-                tableInfo.getTableId(),
+                tablePath,
+                tableId,
                 schemaInfo.getSchemaId(),
                 schemaInfo.getSchema(),
-                tableInfo.getBucketKeys(),
-                tableInfo.getPartitionKeys(),
-                tableInfo.getNumBuckets(),
-                tableInfo.getProperties(),
-                tableInfo.getCustomProperties(),
-                tableInfo.getComment().orElse(null),
-                tableInfo.getCreatedTime(),
-                tableInfo.getModifiedTime());
+                bucketKeys,
+                partitionKeys,
+                numBuckets,
+                properties,
+                customProperties,
+                comment,
+                createdTime,
+                modifiedTime);
     }
 
     @Override

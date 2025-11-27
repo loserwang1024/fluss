@@ -275,7 +275,7 @@ public interface TableChange {
     /** A table change to modify a column. */
     class ModifyColumn implements SchemaChange {
         private final String name;
-        private DataType dataType;
+        private final DataType dataType;
         private final @Nullable String comment;
 
         private final @Nullable ColumnPosition newPosition;
@@ -333,7 +333,7 @@ public interface TableChange {
     interface ColumnPosition {
         /** Get the position to place the column at the first. */
         static ColumnPosition last() {
-            return LAST.INSTANCE;
+            return Last.INSTANCE;
         }
 
         /** Get the position to place the column at the first. */
@@ -359,11 +359,11 @@ public interface TableChange {
         }
     }
 
-    /** Column position LAST means the specified column should be the last column. */
-    final class LAST implements ColumnPosition {
-        private static final LAST INSTANCE = new LAST();
+    /** Column position Last means the specified column should be the last column. */
+    final class Last implements ColumnPosition {
+        private static final Last INSTANCE = new Last();
 
-        private LAST() {}
+        private Last() {}
 
         @Override
         public String toString() {

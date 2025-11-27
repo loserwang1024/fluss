@@ -21,14 +21,12 @@ import org.apache.fluss.config.ConfigOptions;
 import org.apache.fluss.config.MemorySize;
 import org.apache.fluss.exception.LogSegmentOffsetOverflowException;
 import org.apache.fluss.metadata.LogFormat;
-import org.apache.fluss.metadata.SchemaGetter;
 import org.apache.fluss.record.LogRecord;
 import org.apache.fluss.record.LogRecordBatch;
 import org.apache.fluss.record.LogRecordReadContext;
 import org.apache.fluss.record.LogRecords;
 import org.apache.fluss.record.LogTestBase;
 import org.apache.fluss.record.MemoryLogRecords;
-import org.apache.fluss.record.TestingSchemaGetter;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -43,8 +41,8 @@ import java.util.Collections;
 import java.util.stream.Stream;
 
 import static org.apache.fluss.record.TestData.DATA1_ROW_TYPE;
-import static org.apache.fluss.record.TestData.DATA1_SCHEMA;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
+import static org.apache.fluss.record.TestData.TEST_SCHEMA_GETTER;
 import static org.apache.fluss.testutils.DataTestUtils.assertLogRecordsEquals;
 import static org.apache.fluss.testutils.DataTestUtils.genLogRecordsWithBaseOffsetAndTimestamp;
 import static org.apache.fluss.testutils.DataTestUtils.genMemoryLogRecordsWithBaseOffset;
@@ -343,10 +341,9 @@ final class LogSegmentTest extends LogTestBase {
         LogTestUtils.writeNonsenseToFile(indexFile, 5, (int) indexFile.length());
         segment.recover();
 
-        SchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         try (LogRecordReadContext readContext =
                 LogRecordReadContext.createArrowReadContext(
-                        DATA1_ROW_TYPE, DEFAULT_SCHEMA_ID, schemaGetter)) {
+                        DATA1_ROW_TYPE, DEFAULT_SCHEMA_ID, TEST_SCHEMA_GETTER)) {
             for (int i = 0; i < 100; i++) {
                 FetchDataInfo read = segment.read(i, 100, segment.getSizeInBytes(), true);
                 assertThat(read).isNotNull();

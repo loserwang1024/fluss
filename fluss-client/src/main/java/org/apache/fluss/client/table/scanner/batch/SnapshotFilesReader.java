@@ -26,7 +26,6 @@ import org.apache.fluss.rocksdb.RocksDBHandle;
 import org.apache.fluss.rocksdb.RocksIteratorWrapper;
 import org.apache.fluss.row.InternalRow;
 import org.apache.fluss.row.ProjectedRow;
-import org.apache.fluss.row.PruneRow;
 import org.apache.fluss.row.encode.ValueDecoder;
 import org.apache.fluss.utils.CloseableIterator;
 import org.apache.fluss.utils.CloseableRegistry;
@@ -160,7 +159,7 @@ class SnapshotFilesReader implements CloseableIterator<InternalRow> {
         InternalRow originRow = originValue.row;
         if (targetSchemaId != originValue.schemaId) {
             originRow =
-                    PruneRow.from(schemaGetter.getSchema(originValue.schemaId), targetSchema)
+                    ProjectedRow.from(schemaGetter.getSchema(originValue.schemaId), targetSchema)
                             .replaceRow(originRow);
         }
 

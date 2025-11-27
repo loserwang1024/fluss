@@ -121,6 +121,16 @@ public class KvSnapshotBatchScanner implements BatchScanner {
         initReaderAsynchronously();
     }
 
+    /**
+     * Fetch data from snapshot.
+     *
+     * <p>If the snapshot file reader is not ready in given maximum block time, return an empty
+     * iterator. If the reader is ready, always return the reader if there remains any record in the
+     * reader, otherwise, return null.
+     *
+     * @param timeout The maximum time to block (must not be greater than {@link Long#MAX_VALUE}
+     *     milliseconds)
+     */
     @Nullable
     @Override
     public CloseableIterator<InternalRow> pollBatch(Duration timeout) throws IOException {

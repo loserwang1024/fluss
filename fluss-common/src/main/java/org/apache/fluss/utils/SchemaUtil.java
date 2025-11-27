@@ -83,8 +83,9 @@ public class SchemaUtil {
 
             if (originColumn != null
                     && !Objects.equals(
-                            expectedColumn.getDataType(),
-                            originColumns.get(indexMapping[i]).getDataType())) {
+                            expectedColumn.getDataType().copy(true),
+                            originColumns.get(indexMapping[i]).getDataType().copy(true))) {
+
                 throw new SchemaChangeException(
                         String.format(
                                 "Expected datatype of column(id=%s,name=%s) is [%s], while the actual datatype is [%s]",

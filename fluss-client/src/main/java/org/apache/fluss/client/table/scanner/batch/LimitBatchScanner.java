@@ -34,7 +34,6 @@ import org.apache.fluss.record.ValueRecordReadContext;
 import org.apache.fluss.row.GenericRow;
 import org.apache.fluss.row.InternalRow;
 import org.apache.fluss.row.ProjectedRow;
-import org.apache.fluss.row.PruneRow;
 import org.apache.fluss.rpc.gateway.TabletServerGateway;
 import org.apache.fluss.rpc.messages.LimitScanRequest;
 import org.apache.fluss.rpc.messages.LimitScanResponse;
@@ -144,7 +143,7 @@ public class LimitBatchScanner implements BatchScanner {
                 InternalRow row = record.getRow();
                 if (targetSchemaId != record.schemaId()) {
                     row =
-                            PruneRow.from(
+                            ProjectedRow.from(
                                             schemaGetter.getSchema(record.schemaId()),
                                             schemaGetter.getSchema(targetSchemaId))
                                     .replaceRow(row);

@@ -21,10 +21,8 @@ import org.apache.fluss.client.metadata.MetadataUpdater;
 import org.apache.fluss.client.metadata.TestingMetadataUpdater;
 import org.apache.fluss.client.table.scanner.ScanRecord;
 import org.apache.fluss.config.Configuration;
-import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.record.LogRecordReadContext;
-import org.apache.fluss.record.TestingSchemaGetter;
 import org.apache.fluss.rpc.entity.FetchLogResultForBucket;
 
 import org.junit.jupiter.api.AfterEach;
@@ -38,11 +36,11 @@ import java.util.Map;
 
 import static org.apache.fluss.record.TestData.DATA1;
 import static org.apache.fluss.record.TestData.DATA1_ROW_TYPE;
-import static org.apache.fluss.record.TestData.DATA1_SCHEMA;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_ID;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_INFO;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_PATH;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
+import static org.apache.fluss.record.TestData.TEST_SCHEMA_GETTER;
 import static org.apache.fluss.testutils.DataTestUtils.genMemoryLogRecordsByObject;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -68,11 +66,9 @@ public class LogFetchCollectorTest {
         logFetchCollector =
                 new LogFetchCollector(
                         DATA1_TABLE_PATH, logScannerStatus, new Configuration(), metadataUpdater);
-        TestingSchemaGetter testingSchemaGetter =
-                new TestingSchemaGetter(new SchemaInfo(DATA1_SCHEMA, DEFAULT_SCHEMA_ID));
         readContext =
                 LogRecordReadContext.createArrowReadContext(
-                        DATA1_ROW_TYPE, DEFAULT_SCHEMA_ID, testingSchemaGetter);
+                        DATA1_ROW_TYPE, DEFAULT_SCHEMA_ID, TEST_SCHEMA_GETTER);
     }
 
     @AfterEach

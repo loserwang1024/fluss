@@ -578,8 +578,6 @@ public final class Replica {
                 snapshotUsed = initKvTablet();
                 break;
             } catch (Exception e) {
-                // TODO:There is a risk here. If the log is not successfully applied after
-                // INIT_KV_TABLET_MAX_
                 LOG.warn(
                         "Fail to init kv tablet for bucket {}, retrying for {} times",
                         tableBucket,

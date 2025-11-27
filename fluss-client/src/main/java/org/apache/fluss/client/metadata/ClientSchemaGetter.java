@@ -27,9 +27,10 @@ import org.apache.fluss.metadata.TablePath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+
+import static org.apache.fluss.utils.MapUtils.newConcurrentHashMap;
 
 /** Schema getter for client. */
 @Internal
@@ -37,7 +38,6 @@ public class ClientSchemaGetter implements SchemaGetter {
     private static final Logger LOG = LoggerFactory.getLogger(ClientSchemaGetter.class);
 
     private final TablePath tablePath;
-    // todo: 改为cache.
     private final Map<Integer, Schema> schemasById;
     private final Admin admin;
     private SchemaInfo latestSchemaInfo;
@@ -46,7 +46,7 @@ public class ClientSchemaGetter implements SchemaGetter {
         this.tablePath = tablePath;
         this.latestSchemaInfo = latestSchemaInfo;
         this.admin = admin;
-        this.schemasById = new HashMap<>();
+        this.schemasById = newConcurrentHashMap();
         schemasById.put(latestSchemaInfo.getSchemaId(), latestSchemaInfo.getSchema());
     }
 
@@ -56,9 +56,8 @@ public class ClientSchemaGetter implements SchemaGetter {
                 schemaId,
                 (id) -> {
                     try {
-                        // todo: 测试这一步总是会一定概率卡住(有时候卡几分钟恢复），这个可以排查一下。
                         SchemaInfo schemaInfo =
-                                admin.getTableSchema(tablePath, schemaId).get(5, TimeUnit.MINUTES);
+                                admin.getTableSchema(tablePath, schemaId).get(1, TimeUnit.MINUTES);
                         if (id > latestSchemaInfo.getSchemaId()) {
                             latestSchemaInfo = schemaInfo;
                         }
@@ -77,11 +76,5 @@ public class ClientSchemaGetter implements SchemaGetter {
     }
 
     @Override
-    public void release() {
-        try {
-            admin.close();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
+    public void release() {}
 }

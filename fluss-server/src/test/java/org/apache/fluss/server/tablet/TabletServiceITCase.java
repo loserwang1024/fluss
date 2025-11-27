@@ -94,6 +94,7 @@ import static org.apache.fluss.record.TestData.DATA1_TABLE_PATH;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_PATH_PK;
 import static org.apache.fluss.record.TestData.DATA_1_WITH_KEY_AND_VALUE;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
+import static org.apache.fluss.record.TestData.TEST_SCHEMA_GETTER;
 import static org.apache.fluss.server.testutils.KvTestUtils.assertLookupResponse;
 import static org.apache.fluss.server.testutils.KvTestUtils.assertPrefixLookupResponse;
 import static org.apache.fluss.server.testutils.RpcMessageTestUtils.assertFetchLogResponse;
@@ -741,12 +742,11 @@ public class TabletServiceITCase {
         // fetch only second field, results contains from offset 10 ~ 20, even fetchOffset=15L
         List<Object[]> expected2 = new ArrayList<>(ANOTHER_DATA1);
 
-        SchemaGetter schemaGetter = new TestingSchemaGetter(DEFAULT_SCHEMA_ID, DATA1_SCHEMA);
         // limit log table scan will get the latest limit number of data.
         assertLimitScanResponse(
                 logLeaderGateWay.limitScan(newLimitScanRequest(logTableId, 0, 10)).get(),
                 DATA1_ROW_TYPE,
-                schemaGetter,
+                TEST_SCHEMA_GETTER,
                 expected2);
     }
 

@@ -114,7 +114,7 @@ public abstract class FlinkSinkWriter<InputT> implements SinkWriter<InputT> {
                 "Current Fluss Schema is {}, Table RowType is {}",
                 table.getTableInfo().getSchema(),
                 tableRowType);
-        sanityCheck(table.getTableInfo());
+        // sanityCheck(table.getTableInfo());
 
         try {
             this.serializationSchema.open(

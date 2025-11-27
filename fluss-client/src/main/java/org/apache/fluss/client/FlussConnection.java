@@ -112,7 +112,7 @@ public final class FlussConnection implements Connection {
         metadataUpdater.updateTableOrPartitionMetadata(tablePath, null);
         Admin admin = getOrCreateAdmin();
         TableInfo tableInfo = admin.getTableInfo(tablePath).join();
-        return new FlussTable(this, tablePath, TableInfo.of(tableInfo, schemaInfo));
+        return new FlussTable(this, tablePath, tableInfo.withNewSchema(schemaInfo));
     }
 
     public MetadataUpdater getMetadataUpdater() {

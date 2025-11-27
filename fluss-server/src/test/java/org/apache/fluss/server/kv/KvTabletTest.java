@@ -88,7 +88,6 @@ import static org.apache.fluss.record.TestData.DATA1_SCHEMA;
 import static org.apache.fluss.record.TestData.DATA1_SCHEMA_PK;
 import static org.apache.fluss.record.TestData.DATA2_ROW_TYPE;
 import static org.apache.fluss.record.TestData.DATA2_SCHEMA;
-import static org.apache.fluss.record.TestData.DATA3_SCHEMA_PK;
 import static org.apache.fluss.record.TestData.DEFAULT_SCHEMA_ID;
 import static org.apache.fluss.testutils.DataTestUtils.compactedRow;
 import static org.apache.fluss.testutils.DataTestUtils.createBasicMemoryLogRecords;
@@ -814,6 +813,15 @@ class KvTabletTest {
                         .withComment("b is second column")
                         .primaryKey("a")
                         .build();
+
+        Schema newSchema =
+                Schema.newBuilder()
+                        .column("a", DataTypes.INT())
+                        .withComment("a is first column")
+                        .column("b", DataTypes.INT())
+                        .column("c", DataTypes.STRING())
+                        .withComment("c is third column")
+                        .build();
         Map<String, String> config = new HashMap<>();
         config.put("table.merge-engine", "versioned");
         config.put("table.merge-engine.versioned.ver-column", "b");
@@ -942,11 +950,11 @@ class KvTabletTest {
                 .isEqualTo(expectedLogs);
 
         // Test schema evolution.
-        schemaGetter.updateLatestSchemaInfo(new SchemaInfo(DATA3_SCHEMA_PK, 2));
-        readLogRowType =
+        schemaGetter.updateLatestSchemaInfo(new SchemaInfo(newSchema, 2));
+        RowType newSchemaLogRowType =
                 doProjection
-                        ? DATA3_SCHEMA_PK.getRowType().project(new int[] {0})
-                        : DATA3_SCHEMA_PK.getRowType();
+                        ? newSchema.getRowType().project(new int[] {0})
+                        : newSchema.getRowType();
         if (doProjection) {
             logProjection = new FileLogProjection();
             logProjection.setCurrentProjection(
@@ -957,25 +965,26 @@ class KvTabletTest {
         KvRecordTestUtils.KvRecordBatchFactory batchFactoryOfBroadenSchema =
                 KvRecordTestUtils.KvRecordBatchFactory.of(2);
         KvRecordTestUtils.KvRecordFactory recordFactoryOfBroadenSchema =
-                KvRecordTestUtils.KvRecordFactory.of(DATA3_SCHEMA_PK.getRowType());
+                KvRecordTestUtils.KvRecordFactory.of(newSchema.getRowType());
         KvRecordBatch kvRecordBatch4 =
                 batchFactoryOfBroadenSchema.ofRecords(
                         recordFactoryOfBroadenSchema.ofRecord(
-                                "k1".getBytes(), new Object[] {1, 1002L}));
+                                "k1".getBytes(), new Object[] {1, 1002, "a"}));
         endOffset = logTablet.localLogEndOffset();
         kvTablet.putAsLeader(kvRecordBatch4, null);
         expectedLogs =
                 logRecords(
-                        readLogRowType,
+                        newSchemaLogRowType,
                         endOffset,
                         Arrays.asList(ChangeType.UPDATE_BEFORE, ChangeType.UPDATE_AFTER),
                         doProjection
                                 ? Arrays.asList(new Object[] {1}, new Object[] {1})
-                                : Arrays.asList(new Object[] {1, 1001L}, new Object[] {1, 1002L}),
+                                : Arrays.asList(
+                                        new Object[] {1, 1001, null}, new Object[] {1, 1002, "a"}),
                         (short) 2);
         actualLogRecords = readLogRecords(logTablet, endOffset, logProjection);
         assertThatLogRecords(actualLogRecords)
-                .withSchema(readLogRowType)
+                .withSchema(newSchemaLogRowType)
                 .assertCheckSum(!doProjection)
                 .isEqualTo(expectedLogs);
 
@@ -987,16 +996,17 @@ class KvTabletTest {
         kvTablet.putAsLeader(kvRecordBatch5, null);
         expectedLogs =
                 logRecords(
-                        readLogRowType,
+                        newSchemaLogRowType,
                         endOffset,
                         Arrays.asList(ChangeType.UPDATE_BEFORE, ChangeType.UPDATE_AFTER),
                         doProjection
                                 ? Arrays.asList(new Object[] {1}, new Object[] {1})
-                                : Arrays.asList(new Object[] {1, 1002L}, new Object[] {1, 1003L}),
+                                : Arrays.asList(
+                                        new Object[] {1, 1002, "a"}, new Object[] {1, 1003, null}),
                         (short) 2);
         actualLogRecords = readLogRecords(logTablet, endOffset, logProjection);
         assertThatLogRecords(actualLogRecords)
-                .withSchema(readLogRowType)
+                .withSchema(newSchemaLogRowType)
                 .assertCheckSum(!doProjection)
                 .isEqualTo(expectedLogs);
     }

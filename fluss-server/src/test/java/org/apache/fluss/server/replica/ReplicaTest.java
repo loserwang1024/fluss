@@ -119,7 +119,6 @@ final class ReplicaTest extends ReplicaTestBase {
         assertThat(kvReplica.getKvTablet()).isNotNull();
     }
 
-    // todo: add and modify test.
     @Test
     void testAppendRecordsToLeader() throws Exception {
         Replica logReplica =
