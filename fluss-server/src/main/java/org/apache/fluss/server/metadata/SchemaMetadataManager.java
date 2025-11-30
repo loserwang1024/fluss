@@ -31,6 +31,7 @@ import org.apache.fluss.utils.MapUtils;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -180,6 +181,12 @@ public class SchemaMetadataManager {
                     throw new RuntimeException(cause);
                 }
             }
+        }
+
+        @Override
+        public CompletableFuture<SchemaInfo> getSchemaInfoAsync(int schemaId) {
+            // TODO: make it async using async zookeeper API.
+            return CompletableFuture.completedFuture(new SchemaInfo(getSchema(schemaId), schemaId));
         }
 
         @Override
