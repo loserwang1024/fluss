@@ -35,10 +35,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -56,11 +56,9 @@ import static org.apache.fluss.utils.Preconditions.checkState;
 public final class Schema implements Serializable {
 
     private static final long serialVersionUID = 1L;
-
     private static final Schema EMPTY = Schema.newBuilder().build();
 
     private final List<Column> columns;
-    private final Map<Integer, Column> columnById;
     private final @Nullable PrimaryKey primaryKey;
     private final RowType rowType;
 
@@ -82,8 +80,6 @@ public final class Schema implements Serializable {
                                                 new DataField(
                                                         column.getName(), column.getDataType()))
                                 .collect(Collectors.toList()));
-        columnById =
-                columns.stream().collect(Collectors.toMap(Column::getColumnId, column -> column));
         this.highestFieldId = highestFieldId;
     }
 
@@ -207,10 +203,11 @@ public final class Schema implements Serializable {
     public static final class Builder {
         private final List<Column> columns;
         private @Nullable PrimaryKey primaryKey;
-        private @Nullable Integer highestFieldId;
+        private AtomicInteger highestFieldId;
 
         private Builder() {
             columns = new ArrayList<>();
+            highestFieldId = new AtomicInteger(-1);
         }
 
         /** Adopts all members from the given schema. */
@@ -219,11 +216,12 @@ public final class Schema implements Serializable {
             if (schema.primaryKey != null) {
                 primaryKeyNamed(schema.primaryKey.constraintName, schema.primaryKey.columnNames);
             }
+            this.highestFieldId = new AtomicInteger(schema.highestFieldId);
             return this;
         }
 
         public Builder highestFieldId(int highestFieldId) {
-            this.highestFieldId = highestFieldId;
+            this.highestFieldId = new AtomicInteger(highestFieldId);
             return this;
         }
 
@@ -287,8 +285,7 @@ public final class Schema implements Serializable {
         public Builder column(String columnName, DataType dataType) {
             checkNotNull(columnName, "Column name must not be null.");
             checkNotNull(dataType, "Data type must not be null.");
-            short defaultColumnId = (short) columns.size();
-            columns.add(new Column(columnName, dataType, null, defaultColumnId));
+            columns.add(new Column(columnName, dataType, null, highestFieldId.incrementAndGet()));
             return this;
         }
 
@@ -362,18 +359,15 @@ public final class Schema implements Serializable {
         public Schema build() {
             Integer maximumColumnId =
                     columns.stream().map(Column::getColumnId).max(Integer::compareTo).orElse(0);
-            if (highestFieldId == null) {
-                highestFieldId = maximumColumnId;
-            } else {
-                checkState(
-                        highestFieldId >= maximumColumnId,
-                        "Highest field id must be greater than or equal to the maximum column id.");
-            }
+
+            checkState(
+                    columns.isEmpty() || highestFieldId.get() >= maximumColumnId,
+                    "Highest field id must be greater than or equal to the maximum column id.");
 
             checkState(
                     columns.stream().map(Column::getColumnId).distinct().count() == columns.size(),
                     "Column ids must be unique.");
-            return new Schema(columns, primaryKey, highestFieldId);
+            return new Schema(columns, primaryKey, highestFieldId.get());
         }
     }
 

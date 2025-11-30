@@ -237,7 +237,6 @@ class FlussTableITCase extends ClientToServerITCaseBase {
         }
     }
 
-    // todo: 测试写入一个过于提前或者为0的schema后会如何
     @Test
     void testPutAndLookup() throws Exception {
         TablePath tablePath = TablePath.of("test_db_1", "test_put_and_lookup_table");

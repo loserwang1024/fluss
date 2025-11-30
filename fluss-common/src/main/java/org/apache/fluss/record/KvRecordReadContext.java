@@ -31,8 +31,6 @@ public class KvRecordReadContext implements KvRecordBatch.ReadContext {
 
     private final KvFormat kvFormat;
     private final SchemaGetter schemaGetter;
-
-    // todo: Modify to use cache.
     private final Map<Integer, RowDecoder> rowDecoderCache;
 
     private KvRecordReadContext(KvFormat kvFormat, SchemaGetter schemaGetter) {
@@ -48,8 +46,6 @@ public class KvRecordReadContext implements KvRecordBatch.ReadContext {
 
     @Override
     public RowDecoder getRowDecoder(int schemaId) {
-        // assume schema id are always not changed for now.
-        // todo: however, schema will change here.
         return rowDecoderCache.computeIfAbsent(
                 schemaId,
                 (id) -> {

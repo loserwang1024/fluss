@@ -30,7 +30,6 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 /** Tests for {@link org.apache.fluss.server.log.FetchParams}. */
 class FetchParamsTest {
 
-    // todo: modified test.
     @Test
     void testSetCurrentFetch() {
         FetchParams fetchParams = new FetchParams(1, 100);

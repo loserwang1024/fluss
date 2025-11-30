@@ -28,8 +28,6 @@ import java.util.Map;
 
 /** A default implementation of {@link ValueRecordBatch.ReadContext} . */
 public class ValueRecordReadContext implements ValueRecordBatch.ReadContext {
-
-    // todo: use cache later.
     private final Map<Integer, RowDecoder> rowDecoderCache;
     private final SchemaGetter schemaGetter;
     private final KvFormat kvFormat;

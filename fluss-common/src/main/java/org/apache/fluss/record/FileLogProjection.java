@@ -103,7 +103,7 @@ public class FileLogProjection {
     private SchemaGetter schemaGetter;
     private long tableId;
     private ArrowCompressionInfo compressionInfo;
-    private int[] selectedFieldIds;
+    private int[] selectedFieldPositions;
 
     public FileLogProjection() {
         this.outputStream = new ByteArrayOutputStream();
@@ -118,11 +118,18 @@ public class FileLogProjection {
             long tableId,
             SchemaGetter schemaGetter,
             ArrowCompressionInfo compressionInfo,
-            int[] selectedFields) {
+            int[] selectedFieldIds) {
         this.tableId = tableId;
         this.schemaGetter = schemaGetter;
         this.compressionInfo = compressionInfo;
-        this.selectedFieldIds = selectedFields;
+
+        // Currently, only add last column is supported.Thus selectedFieldPositions is always same
+        // from same selectedFieldIds.
+        // TODO: if support drop column or add column in middle, this selectedFieldPositions should
+        // be re-calculated for each schema.
+        this.selectedFieldPositions =
+                selectedFieldPositions(
+                        schemaGetter.getLatestSchemaInfo().getSchema(), selectedFieldIds);
     }
 
     /**
@@ -405,15 +412,13 @@ public class FileLogProjection {
         if (projectionsCache.containsKey(projectionKey)) {
             // the schema and projection should identical for the same table id.
             currentProjection = projectionsCache.get(projectionKey);
-            if (!Arrays.equals(currentProjection.selectedFieldIds, selectedFieldIds)
+            if (!Arrays.equals(currentProjection.selectedFieldPositions, selectedFieldPositions)
                     || !currentProjection.schema.equals(rowType)) {
                 throw new InvalidColumnProjectionException(
                         "The schema and projection should be identical for the same table id.");
             }
             return;
         }
-
-        int[] selectedFieldPositions = checkProjection(schema, selectedFieldIds);
 
         // initialize the projection util information
         Schema arrowSchema = ArrowUtils.toArrowSchema(rowType);
@@ -454,12 +459,11 @@ public class FileLogProjection {
                         rowType,
                         metadataLength,
                         bodyCompression,
-                        selectedFieldPositions,
-                        selectedFieldIds);
+                        selectedFieldPositions);
         projectionsCache.put(projectionKey, currentProjection);
     }
 
-    int[] checkProjection(org.apache.fluss.metadata.Schema schema, int[] projectedFields) {
+    int[] selectedFieldPositions(org.apache.fluss.metadata.Schema schema, int[] projectedFields) {
         Map<Integer, Integer> columnIdPositions = new HashMap<>();
         List<Integer> columnIds = schema.getColumnIds();
         for (int i = 0; i < columnIds.size(); i++) {
@@ -521,7 +525,6 @@ public class FileLogProjection {
         final int arrowMetadataLength;
         final ArrowBodyCompression bodyCompression;
         final int[] selectedFieldPositions;
-        final int[] selectedFieldIds;
 
         private ProjectionInfo(
                 BitSet nodesProjection,
@@ -530,8 +533,7 @@ public class FileLogProjection {
                 RowType schema,
                 int arrowMetadataLength,
                 ArrowBodyCompression bodyCompression,
-                int[] selectedFieldPositions,
-                int[] selectedFieldIds) {
+                int[] selectedFieldPositions) {
             this.nodesProjection = nodesProjection;
             this.buffersProjection = buffersProjection;
             this.bufferCount = bufferCount;
@@ -539,7 +541,6 @@ public class FileLogProjection {
             this.arrowMetadataLength = arrowMetadataLength;
             this.bodyCompression = bodyCompression;
             this.selectedFieldPositions = selectedFieldPositions;
-            this.selectedFieldIds = selectedFieldIds;
         }
     }
 

@@ -20,6 +20,8 @@ package org.apache.fluss.server.coordinator.event;
 import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TablePath;
 
+import java.util.Objects;
+
 /** An event for schema change. */
 public class SchemaChangeEvent implements CoordinatorEvent {
     private final TablePath tablePath;
@@ -36,5 +38,25 @@ public class SchemaChangeEvent implements CoordinatorEvent {
 
     public SchemaInfo getSchemaInfo() {
         return schemaInfo;
+    }
+
+    @Override
+    public String toString() {
+        return "SchemaChangeEvent{" + "tablePath=" + tablePath + ", schemaInfo=" + schemaInfo + '}';
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof SchemaChangeEvent)) {
+            return false;
+        }
+        SchemaChangeEvent that = (SchemaChangeEvent) o;
+        return Objects.equals(tablePath, that.tablePath)
+                && Objects.equals(schemaInfo, that.schemaInfo);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(tablePath, schemaInfo);
     }
 }

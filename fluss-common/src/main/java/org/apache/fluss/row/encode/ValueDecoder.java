@@ -25,10 +25,10 @@ import org.apache.fluss.row.BinaryRow;
 import org.apache.fluss.row.decode.RowDecoder;
 import org.apache.fluss.types.DataType;
 
-import java.util.HashMap;
 import java.util.Map;
 
 import static org.apache.fluss.row.encode.ValueEncoder.SCHEMA_ID_LENGTH;
+import static org.apache.fluss.utils.MapUtils.newConcurrentHashMap;
 
 /**
  * A decoder to decode a schema id and {@link BinaryRow} from a byte array value which is encoded by
@@ -36,13 +36,12 @@ import static org.apache.fluss.row.encode.ValueEncoder.SCHEMA_ID_LENGTH;
  */
 public class ValueDecoder {
 
-    // todo: use cache.
     private final Map<Short, RowDecoder> rowDecoders;
     private final SchemaGetter schemaGetter;
     private final KvFormat kvFormat;
 
     public ValueDecoder(SchemaGetter schemaGetter, KvFormat kvFormat) {
-        this.rowDecoders = new HashMap<>();
+        this.rowDecoders = newConcurrentHashMap();
         this.schemaGetter = schemaGetter;
         this.kvFormat = kvFormat;
     }

@@ -266,7 +266,6 @@ public class DefaultCompletedFetchTest {
         fileLogRecords.flush();
 
         FileLogProjection fileLogProjection = new FileLogProjection();
-        // todo: 调整测试
         fileLogProjection.setCurrentProjection(
                 DATA2_TABLE_ID,
                 testingSchemaGetter,
