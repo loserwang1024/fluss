@@ -56,7 +56,6 @@ import org.apache.fluss.types.RowType;
 import org.apache.fluss.types.StringType;
 
 import org.apache.commons.lang3.StringUtils;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -92,12 +91,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** IT case for {@link FlussTable}. */
 class FlussTableITCase extends ClientToServerITCaseBase {
-
-    @AfterEach
-    protected void teardown() throws Exception {
-        admin.dropDatabase(DATA1_TABLE_PATH_PK.getDatabaseName(), true, true).get();
-        super.teardown();
-    }
 
     @Test
     void testGetDescriptor() throws Exception {

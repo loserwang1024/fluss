@@ -132,25 +132,30 @@ class PrimaryKeyLookuper implements Lookuper {
 
         int bucketId = bucketingFunction.bucketing(bkBytes, numBuckets);
         TableBucket tableBucket = new TableBucket(tableInfo.getTableId(), partitionId, bucketId);
-         lookupClient
-                .lookup(tableBucket, pkBytes)
-                .thenApply(
-                        valueBytes -> {
-                            InternalRow row = null;
-                            if (valueBytes != null) {
-                                ValueDecoder.Value value = kvValueDecoder.decodeValue(valueBytes);
-                                if (value.schemaId == tableInfo.getSchemaId()) {
-                                    row = value.row;
-                                } else {
-                                    Schema schema = schemaGetter.getSchema(value.schemaId);
-                                    checkNotNull(schema, "schema is null");
-                                    row =
-                                            ProjectedRow.from(schema, tableInfo.getSchema())
-                                                    .replaceRow(value.row);
-                                }
-                            }
+        CompletableFuture<LookupResult> future = new CompletableFuture<>();
 
-                            return new LookupResult(row);
-                        });
+        CompletableFuture.runAsync(
+                () -> {
+                    try {
+                        byte[] valueBytes = lookupClient.lookup(tableBucket, pkBytes).get();
+                        InternalRow row = null;
+                        if (valueBytes != null) {
+                            ValueDecoder.Value value = kvValueDecoder.decodeValue(valueBytes);
+                            if (value.schemaId == tableInfo.getSchemaId()) {
+                                row = value.row;
+                            } else {
+                                Schema schema = schemaGetter.getSchema(value.schemaId);
+                                checkNotNull(schema, "schema is null");
+                                row =
+                                        ProjectedRow.from(schema, tableInfo.getSchema())
+                                                .replaceRow(value.row);
+                            }
+                        }
+                        future.complete(new LookupResult(row));
+                    } catch (Exception e) {
+                        future.completeExceptionally(e);
+                    }
+                });
+        return future;
     }
 }

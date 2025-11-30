@@ -195,7 +195,6 @@ class FlinkLookupFunctionTest extends FlinkTestBase {
         lookupFunction.close();
 
         // start lookup job after schema change.
-        admin.getTableSchema(tablePath, 1).get();
         lookupFunction =
                 new FlinkLookupFunction(
                         clientConf,

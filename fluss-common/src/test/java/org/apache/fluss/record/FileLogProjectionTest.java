@@ -67,7 +67,6 @@ class FileLogProjectionTest {
         testingSchemaGetter.updateLatestSchemaInfo(new SchemaInfo(TestData.DATA2_SCHEMA, 2));
     }
 
-    // TODO: add tests for nested types
     @Test
     void testSetCurrentProjection() throws Exception {
         short schemaId = (short) 2;
@@ -283,6 +282,7 @@ class FileLogProjectionTest {
                                         Integer.MAX_VALUE))
                 .isInstanceOf(EOFException.class)
                 .hasMessageContaining("Failed to read `arrow header` from file channel");
+        fileLogRecords2.close();
     }
 
     @ParameterizedTest

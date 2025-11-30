@@ -169,28 +169,35 @@ class PrefixKeyLookuper implements Lookuper {
         }
 
         TableBucket tableBucket = new TableBucket(tableInfo.getTableId(), partitionId, bucketId);
-        return lookupClient
-                .prefixLookup(tableBucket, bucketKeyBytes)
-                .thenApply(
-                        result -> {
-                            List<InternalRow> rowList = new ArrayList<>(result.size());
-                            for (byte[] valueBytes : result) {
-                                if (valueBytes == null) {
-                                    continue;
-                                }
-                                ValueDecoder.Value value = kvValueDecoder.decodeValue(valueBytes);
-                                InternalRow row;
-                                if (value.schemaId == tableInfo.getSchemaId()) {
-                                    row = value.row;
-                                } else {
-                                    Schema schema = schemaGetter.getSchema(value.schemaId);
-                                    row =
-                                            ProjectedRow.from(schema, tableInfo.getSchema())
-                                                    .replaceRow(value.row);
-                                }
-                                rowList.add(row);
+        CompletableFuture<LookupResult> future = new CompletableFuture<>();
+
+        CompletableFuture.runAsync(
+                () -> {
+                    try {
+                        List<byte[]> result =
+                                lookupClient.prefixLookup(tableBucket, bucketKeyBytes).get();
+                        List<InternalRow> rowList = new ArrayList<>(result.size());
+                        for (byte[] valueBytes : result) {
+                            if (valueBytes == null) {
+                                continue;
                             }
-                            return new LookupResult(rowList);
-                        });
+                            ValueDecoder.Value value = kvValueDecoder.decodeValue(valueBytes);
+                            InternalRow row;
+                            if (value.schemaId == tableInfo.getSchemaId()) {
+                                row = value.row;
+                            } else {
+                                Schema schema = schemaGetter.getSchema(value.schemaId);
+                                row =
+                                        ProjectedRow.from(schema, tableInfo.getSchema())
+                                                .replaceRow(value.row);
+                            }
+                            rowList.add(row);
+                        }
+                        future.complete(new LookupResult(rowList));
+                    } catch (Exception e) {
+                        future.complete(new LookupResult(Collections.emptyList()));
+                    }
+                });
+        return future;
     }
 }
