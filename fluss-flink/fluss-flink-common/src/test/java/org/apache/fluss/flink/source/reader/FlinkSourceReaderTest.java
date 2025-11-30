@@ -26,8 +26,6 @@ import org.apache.fluss.flink.source.event.PartitionsRemovedEvent;
 import org.apache.fluss.flink.source.metrics.FlinkSourceReaderMetrics;
 import org.apache.fluss.flink.source.split.LogSplit;
 import org.apache.fluss.flink.utils.FlinkTestBase;
-import org.apache.fluss.metadata.Schema;
-import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableDescriptor;
 import org.apache.fluss.metadata.TablePath;
@@ -179,9 +177,7 @@ class FlinkSourceReaderTest extends FlinkTestBase {
                 flussConf,
                 tablePath,
                 sourceOutputType,
-                new SchemaInfo(Schema.newBuilder().fromRowType(sourceOutputType).build(), 1),
                 context,
-                null,
                 new FlinkSourceReaderMetrics(context.metricGroup()),
                 recordEmitter,
                 null);

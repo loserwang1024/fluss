@@ -39,7 +39,6 @@ import org.apache.fluss.metadata.KvFormat;
 import org.apache.fluss.metadata.LogFormat;
 import org.apache.fluss.metadata.MergeEngineType;
 import org.apache.fluss.metadata.Schema;
-import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableChange;
 import org.apache.fluss.metadata.TableDescriptor;
@@ -79,7 +78,6 @@ import static org.apache.fluss.record.TestData.DATA1_TABLE_DESCRIPTOR;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_DESCRIPTOR_PK;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_PATH;
 import static org.apache.fluss.record.TestData.DATA1_TABLE_PATH_PK;
-import static org.apache.fluss.record.TestData.DATA2_SCHEMA;
 import static org.apache.fluss.record.TestData.DATA3_SCHEMA_PK;
 import static org.apache.fluss.testutils.DataTestUtils.assertRowValueEquals;
 import static org.apache.fluss.testutils.DataTestUtils.compactedRow;
@@ -278,8 +276,7 @@ class FlussTableITCase extends ClientToServerITCaseBase {
                         false)
                 .get();
         waitAllSchemaSync(tablePath, 2);
-        Table newSchemaTable =
-                conn.getTable(tableInfo.getTablePath(), new SchemaInfo(DATA2_SCHEMA, 2));
+        Table newSchemaTable = conn.getTable(tableInfo.getTablePath());
         // schema change case1: read new data with new schema.
         verifyPutAndLookup(newSchemaTable, new Object[] {2, "b", "bb"});
         // schema change case2: read new data with old schema.
@@ -368,9 +365,7 @@ class FlussTableITCase extends ClientToServerITCaseBase {
                 .get();
         waitAllSchemaSync(tablePath, 2);
         try (Connection connection = ConnectionFactory.createConnection(clientConf);
-                Table newSchemaTable =
-                        connection.getTable(
-                                tableInfo.getTablePath(), new SchemaInfo(newSchema, 2))) {
+                Table newSchemaTable = connection.getTable(tableInfo.getTablePath())) {
             // schema change case1: read new data with new schema.
             verifyPutAndLookup(
                     newSchemaTable, new Object[] {1, "a", 4L, "value4", "add_column_value"});

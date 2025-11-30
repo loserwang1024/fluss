@@ -261,6 +261,12 @@ public final class Schema implements Serializable {
 
             if (allMatchColumnId) {
                 columns.addAll(inputColumns);
+                highestFieldId =
+                        new AtomicInteger(
+                                inputColumns.stream()
+                                        .mapToInt(Column::getColumnId)
+                                        .max()
+                                        .orElse(-1));
             } else {
                 // if all columnId is not set, this maybe from old version schema. Just use its
                 // position as columnId.

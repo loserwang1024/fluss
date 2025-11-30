@@ -33,8 +33,6 @@ import org.apache.fluss.config.ConfigOptions;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.exception.FlussRuntimeException;
 import org.apache.fluss.fs.FileSystem;
-import org.apache.fluss.metadata.SchemaInfo;
-import org.apache.fluss.metadata.TableInfo;
 import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.metrics.registry.MetricRegistry;
 import org.apache.fluss.rpc.GatewayClientProxy;
@@ -104,15 +102,6 @@ public final class FlussConnection implements Connection {
         metadataUpdater.updateTableOrPartitionMetadata(tablePath, null);
         Admin admin = getOrCreateAdmin();
         return new FlussTable(this, tablePath, admin.getTableInfo(tablePath).join());
-    }
-
-    @Override
-    public Table getTable(TablePath tablePath, SchemaInfo schemaInfo) {
-        // force to update the table info from server to avoid stale data in cache.
-        metadataUpdater.updateTableOrPartitionMetadata(tablePath, null);
-        Admin admin = getOrCreateAdmin();
-        TableInfo tableInfo = admin.getTableInfo(tablePath).join();
-        return new FlussTable(this, tablePath, tableInfo.withNewSchema(schemaInfo));
     }
 
     public MetadataUpdater getMetadataUpdater() {

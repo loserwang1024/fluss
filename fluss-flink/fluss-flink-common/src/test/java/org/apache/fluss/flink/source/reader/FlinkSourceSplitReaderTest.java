@@ -29,7 +29,6 @@ import org.apache.fluss.flink.source.split.LogSplit;
 import org.apache.fluss.flink.source.split.SourceSplitBase;
 import org.apache.fluss.flink.utils.FlinkTestBase;
 import org.apache.fluss.metadata.Schema;
-import org.apache.fluss.metadata.SchemaInfo;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableDescriptor;
 import org.apache.fluss.metadata.TablePath;
@@ -86,37 +85,23 @@ class FlinkSourceSplitReaderTest extends FlinkTestBase {
                                         clientConf,
                                         tablePath1,
                                         DataTypes.ROW(
-                                                DataTypes.FIELD("id", DataTypes.BIGINT()),
-                                                DataTypes.FIELD("name", DataTypes.STRING()),
-                                                DataTypes.FIELD("age", DataTypes.INT())),
-                                        new SchemaInfo(schema1, 1),
-                                        null,
+                                                DataTypes.FIELD("name2", DataTypes.STRING()),
+                                                DataTypes.FIELD("id", DataTypes.BIGINT())),
                                         createMockSourceReaderMetrics(),
                                         null))
                 .isInstanceOf(ValidationException.class)
-                .hasMessage(
-                        "The Flink query schema is not matched to Fluss table schema. \n"
-                                + "Flink query schema: ROW<`id` BIGINT, `name` STRING, `age` INT>\n"
-                                + "Fluss table schema: ROW<`id` BIGINT NOT NULL, `name` STRING, `age` INT>");
+                .hasMessage("The field name2 is not found in the fluss table.");
 
-        assertThatThrownBy(
-                        () ->
-                                new FlinkSourceSplitReader(
-                                        clientConf,
-                                        tablePath1,
-                                        DataTypes.ROW(
-                                                DataTypes.FIELD(
-                                                        "id", DataTypes.BIGINT().copy(false)),
-                                                DataTypes.FIELD("name", DataTypes.STRING())),
-                                        new SchemaInfo(schema1, 1),
-                                        new int[] {1, 0},
-                                        createMockSourceReaderMetrics(),
-                                        null))
-                .isInstanceOf(ValidationException.class)
-                .hasMessage(
-                        "The Flink query schema is not matched to Fluss table schema. \n"
-                                + "Flink query schema: ROW<`id` BIGINT NOT NULL, `name` STRING>\n"
-                                + "Fluss table schema: ROW<`name` STRING, `id` BIGINT NOT NULL> (projection [1, 0])");
+        FlinkSourceSplitReader flinkSourceSplitReader =
+                new FlinkSourceSplitReader(
+                        clientConf,
+                        tablePath1,
+                        DataTypes.ROW(
+                                DataTypes.FIELD("name", DataTypes.STRING()),
+                                DataTypes.FIELD("id", DataTypes.BIGINT().copy(false))),
+                        createMockSourceReaderMetrics(),
+                        null);
+        assertThat(flinkSourceSplitReader.getProjectedFields()).isEqualTo(new int[] {1, 0});
     }
 
     @Test
@@ -399,13 +384,7 @@ class FlinkSourceSplitReaderTest extends FlinkTestBase {
 
     private FlinkSourceSplitReader createSplitReader(TablePath tablePath, RowType rowType) {
         return new FlinkSourceSplitReader(
-                clientConf,
-                tablePath,
-                rowType,
-                new SchemaInfo(Schema.newBuilder().fromRowType(rowType).build(), 1),
-                null,
-                createMockSourceReaderMetrics(),
-                null);
+                clientConf, tablePath, rowType, createMockSourceReaderMetrics(), null);
     }
 
     private FlinkSourceReaderMetrics createMockSourceReaderMetrics() {

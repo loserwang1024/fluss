@@ -126,6 +126,7 @@ class KvSnapshotBatchScannerITCase extends ClientToServerITCaseBase {
 
         // put into values with old schema.
         Map<TableBucket, List<InternalRow>> oldSchemaRowByBuckets = putRows(tableId, tablePath, 10);
+        waitUntilAllSnapshotFinished(oldSchemaRowByBuckets.keySet(), 0);
 
         // add a new column and rename an existing column
         admin.alterTable(
@@ -175,7 +176,7 @@ class KvSnapshotBatchScannerITCase extends ClientToServerITCaseBase {
         }
 
         // wait snapshot finish
-        waitUntilAllSnapshotFinished(expectedRowByBuckets.keySet(), 0);
+        waitUntilAllSnapshotFinished(expectedRowByBuckets.keySet(), 1);
 
         // test read snapshot with new Schema
         testSnapshotRead(tablePath, expectedRowByBuckets);

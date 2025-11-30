@@ -17,9 +17,6 @@
 
 package org.apache.fluss.flink.source;
 
-import org.apache.fluss.client.Connection;
-import org.apache.fluss.client.ConnectionFactory;
-import org.apache.fluss.client.table.Table;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.flink.source.deserializer.DeserializerInitContextImpl;
 import org.apache.fluss.flink.source.deserializer.FlussDeserializationSchema;
@@ -35,9 +32,6 @@ import org.apache.fluss.flink.source.state.FlussSourceEnumeratorStateSerializer;
 import org.apache.fluss.flink.source.state.SourceEnumeratorState;
 import org.apache.fluss.lake.source.LakeSource;
 import org.apache.fluss.lake.source.LakeSplit;
-import org.apache.fluss.metadata.Schema;
-import org.apache.fluss.metadata.SchemaInfo;
-import org.apache.fluss.metadata.TableInfo;
 import org.apache.fluss.metadata.TablePath;
 import org.apache.fluss.predicate.Predicate;
 import org.apache.fluss.types.RowType;
@@ -55,8 +49,6 @@ import org.apache.flink.connector.base.source.reader.synchronization.FutureCompl
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
 import javax.annotation.Nullable;
-
-import java.util.List;
 
 /** Flink source for Fluss. */
 public class FlinkSource<OUT>
@@ -184,14 +176,6 @@ public class FlinkSource<OUT>
         FlinkSourceReaderMetrics flinkSourceReaderMetrics =
                 new FlinkSourceReaderMetrics(context.metricGroup());
 
-        TableInfo tableInfo;
-        try (Connection connection = ConnectionFactory.createConnection(flussConf);
-                Table table = connection.getTable(tablePath)) {
-            tableInfo = table.getTableInfo();
-        }
-
-        Schema schema = tableInfo.getSchema();
-
         deserializationSchema.open(
                 new DeserializerInitContextImpl(
                         context.metricGroup().addGroup("deserializer"),
@@ -200,16 +184,12 @@ public class FlinkSource<OUT>
         FlinkRecordEmitter<OUT> recordEmitter = new FlinkRecordEmitter<>(deserializationSchema);
         // recall to projectedFields
 
-        int[] projectedFields = reCalculateProjectedFields(sourceOutputType, schema.getRowType());
-
         return new FlinkSourceReader<>(
                 elementsQueue,
                 flussConf,
                 tablePath,
                 sourceOutputType,
-                new SchemaInfo(schema, tableInfo.getSchemaId()),
                 context,
-                projectedFields,
                 flinkSourceReaderMetrics,
                 recordEmitter,
                 lakeSource);
@@ -218,32 +198,5 @@ public class FlinkSource<OUT>
     @Override
     public TypeInformation<OUT> getProducedType() {
         return deserializationSchema.getProducedType(sourceOutputType);
-    }
-
-    /**
-     * The projected fields for the fluss table from the source output types. Mapping based on
-     * column name rather thn column id.
-     *
-     * @return
-     */
-    private static int[] reCalculateProjectedFields(
-            RowType sourceOutputType, RowType flussRowType) {
-        if (sourceOutputType.copy(false).equals(flussRowType.copy(false))) {
-            return null;
-        }
-
-        List<String> fieldNames = sourceOutputType.getFieldNames();
-        int[] projectedFlussFields = new int[fieldNames.size()];
-        for (int i = 0; i < fieldNames.size(); i++) {
-            int fieldIndex = flussRowType.getFieldIndex(fieldNames.get(i));
-            if (fieldIndex == -1) {
-                throw new IllegalArgumentException(
-                        String.format(
-                                "The field %s is not found in the fluss table.",
-                                fieldNames.get(i)));
-            }
-            projectedFlussFields[i] = fieldIndex;
-        }
-        return projectedFlussFields;
     }
 }
