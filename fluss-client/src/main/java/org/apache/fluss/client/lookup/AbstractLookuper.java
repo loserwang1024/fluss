@@ -121,7 +121,7 @@ abstract class AbstractLookuper implements Lookuper {
                     if (error != null) {
                         lookupFuture.completeExceptionally(
                                 new RuntimeException(
-                                        "Failed to get schema infos for prefix lookup", error));
+                                        "Failed to get schema infos for lookup", error));
                     } else {
                         LookupResult lookupResult = processSchemaRequestedRows(schemas, valueList);
                         lookupFuture.complete(lookupResult);

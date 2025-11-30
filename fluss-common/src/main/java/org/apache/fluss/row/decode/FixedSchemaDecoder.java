@@ -51,7 +51,7 @@ public class FixedSchemaDecoder {
     public FixedSchemaDecoder(KvFormat kvFormat, Schema sourceSchema, Schema targetSchema) {
         this.rowDecoder =
                 RowDecoder.create(
-                        kvFormat, targetSchema.getRowType().getChildren().toArray(new DataType[0]));
+                        kvFormat, sourceSchema.getRowType().getChildren().toArray(new DataType[0]));
         this.fieldIdMapping = SchemaUtil.getIndexMapping(sourceSchema, targetSchema);
         this.noProjection = false;
     }
