@@ -24,7 +24,7 @@
     <parent>
         <groupId>org.apache.fluss</groupId>
         <artifactId>fluss-flink</artifactId>
-        <version>0.10-SNAPSHOT</version>
+        <version>0.9-ali-0.1</version>
     </parent>
 
     <packaging>jar</packaging>
