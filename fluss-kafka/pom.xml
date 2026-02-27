@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.apache.fluss</groupId>
         <artifactId>fluss</artifactId>
-        <version>0.9-ali-0.1</version>
+        <version>0.9-ali-0.2</version>
     </parent>
 
     <artifactId>fluss-kafka</artifactId>
