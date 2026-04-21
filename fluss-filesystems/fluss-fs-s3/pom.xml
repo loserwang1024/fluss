@@ -24,7 +24,7 @@
     <parent>
         <groupId>org.apache.fluss</groupId>
         <artifactId>fluss-filesystems</artifactId>
-        <version>0.9-ali-2.0</version>
+        <version>0.9-ali-0.4</version>
     </parent>
 
     <artifactId>fluss-fs-s3</artifactId>
