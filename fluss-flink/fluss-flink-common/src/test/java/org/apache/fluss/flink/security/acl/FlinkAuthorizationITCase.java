@@ -61,6 +61,7 @@ import static org.apache.fluss.security.acl.OperationType.CREATE;
 import static org.apache.fluss.security.acl.OperationType.DESCRIBE;
 import static org.apache.fluss.security.acl.OperationType.DROP;
 import static org.apache.fluss.security.acl.OperationType.READ;
+import static org.apache.fluss.security.acl.OperationType.USAGE;
 import static org.apache.fluss.security.acl.OperationType.WRITE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -136,10 +137,10 @@ abstract class FlinkAuthorizationITCase extends AbstractTestBase {
     void testShowDatabases() throws Exception {
         assertThat(CollectionUtil.iteratorToList(tEnv.executeSql("show databases").collect()))
                 .isEmpty();
-        addAcl(Resource.database(DEFAULT_DB), DESCRIBE);
+        addAcl(Resource.database(DEFAULT_DB), USAGE);
         assertThat(CollectionUtil.iteratorToList(tEnv.executeSql("show databases").collect()))
                 .containsExactly(Row.of(DEFAULT_DB));
-        dropAcl(Resource.database(DEFAULT_DB), DESCRIBE);
+        dropAcl(Resource.database(DEFAULT_DB), USAGE);
         assertThat(CollectionUtil.iteratorToList(tEnv.executeSql("show databases").collect()))
                 .isEmpty();
     }
@@ -190,6 +191,9 @@ abstract class FlinkAuthorizationITCase extends AbstractTestBase {
         tEnv.executeSql(String.format(createTableDDLFormat, testTable2.getTableName())).await();
         dropAcl(Resource.database(DEFAULT_DB), CREATE);
 
+        assertThat(CollectionUtil.iteratorToList(tEnv.executeSql("show tables").collect()))
+                .isEmpty();
+        addAcl(Resource.database(DEFAULT_DB), USAGE);
         assertThat(CollectionUtil.iteratorToList(tEnv.executeSql("show tables").collect()))
                 .isEmpty();
         addAcl(Resource.table(testTable1), DESCRIBE);

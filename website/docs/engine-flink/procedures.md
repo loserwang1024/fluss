@@ -41,7 +41,7 @@ CALL [catalog_name.]sys.add_acl(
 - `resource` (required): The resource to grant permissions on. Can be `'CLUSTER'` for cluster-level permissions or a specific resource name (e.g., database or table name).
 - `permission` (required): The permission type to grant. Valid values are `'ALLOW'` or `'DENY'`.
 - `principal` (required): The principal to grant permissions to, in the format `'Type:Name'` (e.g., `'User:Alice'`).
-- `operation` (required): The operation type to grant. Valid values include `'READ'`, `'WRITE'`, `'CREATE'`, `'DELETE'`, `'ALTER'`, `'DESCRIBE'`, `'CLUSTER_ACTION'`, `'IDEMPOTENT_WRITE'`.
+- `operation` (required): The operation type to grant. Valid values include `'READ'`, `'WRITE'`, `'CREATE'`, `'DELETE'`, `'ALTER'`, `'DESCRIBE'`, and `'USAGE'`.
 - `host` (optional): The host from which the principal can access the resource. Defaults to `'*'` (all hosts).
 
 **Example:**
@@ -66,6 +66,15 @@ CALL sys.add_acl(
   principal => 'User:Bob',
   operation => 'WRITE',
   host => '192.168.1.100'
+);
+
+-- Allow Alice to discover a database without exposing all tables in it
+CALL sys.add_acl(
+  resource => 'cluster.my_database',
+  permission => 'ALLOW',
+  principal => 'User:Alice',
+  operation => 'USAGE',
+  host => '*'
 );
 ```
 

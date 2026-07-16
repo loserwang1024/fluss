@@ -380,6 +380,69 @@ public class FlussAuthorizationITCase {
     }
 
     @Test
+    void testDatabaseUsageOperation() throws Exception {
+        TablePath hiddenTablePath =
+                TablePath.of(DATA1_TABLE_PATH_PK.getDatabaseName(), "usage_hidden_table");
+        rootAdmin.createTable(hiddenTablePath, DATA1_TABLE_DESCRIPTOR_PK, true).get();
+
+        try {
+            List<AclBinding> aclBindings =
+                    Collections.singletonList(
+                            new AclBinding(
+                                    Resource.table(DATA1_TABLE_PATH_PK),
+                                    new AccessControlEntry(
+                                            guestPrincipal,
+                                            "*",
+                                            OperationType.DESCRIBE,
+                                            PermissionType.ALLOW)));
+            rootAdmin.createAcls(aclBindings).all().get();
+            FLUSS_CLUSTER_EXTENSION.waitUntilAuthenticationSync(aclBindings, true);
+
+            assertThat(guestAdmin.listDatabases().get()).isEmpty();
+            assertThat(guestAdmin.listDatabaseSummaries().get()).isEmpty();
+            assertThat(guestAdmin.databaseExists(DATA1_TABLE_PATH_PK.getDatabaseName()).get())
+                    .isFalse();
+            assertThat(guestAdmin.listTables(DATA1_TABLE_PATH_PK.getDatabaseName()).get())
+                    .containsExactly(DATA1_TABLE_PATH_PK.getTableName());
+
+            aclBindings =
+                    Collections.singletonList(
+                            new AclBinding(
+                                    Resource.database(DATA1_TABLE_PATH_PK.getDatabaseName()),
+                                    new AccessControlEntry(
+                                            guestPrincipal,
+                                            "*",
+                                            OperationType.USAGE,
+                                            PermissionType.ALLOW)));
+            rootAdmin.createAcls(aclBindings).all().get();
+            FLUSS_CLUSTER_EXTENSION.waitUntilAuthenticationSync(aclBindings, true);
+
+            assertThat(guestAdmin.listDatabases().get())
+                    .containsExactly(DATA1_TABLE_PATH_PK.getDatabaseName());
+            assertThat(guestAdmin.databaseExists(DATA1_TABLE_PATH_PK.getDatabaseName()).get())
+                    .isTrue();
+            assertThat(guestAdmin.listTables(DATA1_TABLE_PATH_PK.getDatabaseName()).get())
+                    .containsExactly(DATA1_TABLE_PATH_PK.getTableName());
+            assertThat(guestAdmin.listDatabaseSummaries().get()).hasSize(1);
+            assertThat(guestAdmin.listDatabaseSummaries().get().get(0).getDatabaseName())
+                    .isEqualTo(DATA1_TABLE_PATH_PK.getDatabaseName());
+            assertThatThrownBy(
+                            () ->
+                                    guestAdmin
+                                            .getDatabaseInfo(DATA1_TABLE_PATH_PK.getDatabaseName())
+                                            .get())
+                    .rootCause()
+                    .isInstanceOf(AuthorizationException.class)
+                    .hasMessageContaining(
+                            "operate DESCRIBE on resource Resource{type=DATABASE, name='"
+                                    + DATA1_TABLE_PATH_PK.getDatabaseName()
+                                    + "'}");
+        } finally {
+            rootAdmin.dropTable(hiddenTablePath, true).get();
+        }
+    }
+
+    @Test
     void testAlterTable() throws Exception {
         assertThatThrownBy(
                         () ->

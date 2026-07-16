@@ -56,11 +56,25 @@ In Fluss, an OperationType defines the type of action a principal (user or role)
 | `DELETE` | Allows deleting a resource (e.g., deleting a database or table).|
 | `ALTER` | Allows modifying the structure of a resource (e.g., altering the schema of a table).|
 | `DESCRIBE` | Allows describing a resource (e.g., retrieving metadata about a table).|
+| `USAGE` | Allows discovering and referencing a container resource without granting access to its contents.|
 
 
 Fluss implements a permission inheritance model, where certain operations imply others. This helps reduce redundancy in ACL rules by avoiding the need to explicitly grant every low-level permission.
 * `ALL` implies all other operations.
-* `READ`, `WRITE`, `CREATE`, `DROP`, `ALTER` each imply `DESCRIBE`.
+* `READ`, `WRITE`, `CREATE`, `DROP`, `ALTER` each imply `DESCRIBE` and `USAGE`.
+* `DESCRIBE` implies `USAGE`.
+* `USAGE` does not imply any other operation.
+
+For least-privilege table access, grant `USAGE` on the parent database and grant the required operation on individual tables. A table permission does not automatically grant `USAGE` on its parent database.
+
+For example:
+
+```sql
+CALL sys.add_acl('cluster.sales', 'ALLOW', 'User:alice', 'USAGE', '*');
+CALL sys.add_acl('cluster.sales.orders', 'ALLOW', 'User:alice', 'READ', '*');
+```
+
+With these ACLs, Alice can discover the `sales` database and access the `orders` table, but other tables in `sales` remain hidden.
 
 ### Fluss Principal
 The FlussPrincipal is a core concept in the Fluss security architecture. It represents the identity of an authenticated entity (such as a user or service) and serves as the central bridge between authentication and authorization. Once a client successfully authenticates via a supported mechanism (e.g., SASL/PLAIN, Kerberos), a FlussPrincipal is created to represent that client's identity.
@@ -77,7 +91,8 @@ Below is a summary of the currently public protocols and their relationship with
 | --- | --- | --- | --- |
 | CREATE_DATABASE | CREATE | Cluster | |
 | DROP_DATABASE | DELETE | Database | |
-| LIST_DATABASES | DESCRIBE | Database | Only databases that the user has permission to access are returned. Databases for which the user lacks sufficient privileges are automatically filtered from the results.  |
+| LIST_DATABASES | USAGE | Database | Only database names that the user has permission to use are returned. Database summaries continue to require `DESCRIBE`. |
+| DATABASE_EXISTS | USAGE | Database | Returns false when the user cannot use the database. |
 | CREATE_TABLE | CREATE | Database | |
 | DROP_TABLE | DELETE | Table | |
 | GET_TABLE_INFO | DESCRIBE | Table | |
@@ -128,7 +143,7 @@ CALL [catalog].sys.add_acl(
 | resource   | Yes      | The resource to apply the ACL to (e.g., `cluster`, `cluster.db1`, `cluster.db1.table1`)                             |
 | permission | Yes      | The permission to grant to the principal on the resource, currently only `ALLOW` is supported.                    |
 | principal  | Yes      | The principal to apply the ACL to (e.g., `User:alice`, `Role:admin`)                                              |
-| operation  | Yes      | The operation to allow or deny for the principal on the resource (e.g., `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `ANY`, `ALL`) |
+| operation  | Yes      | The operation to allow or deny for the principal on the resource (e.g., `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `USAGE`, `ANY`, `ALL`) |
 | host       | No       | The host to apply the ACL to (e.g., `127.0.0.1`). If not specified, the ACL applies to all hosts (same as `*`)  |
 
 ### Remove ACL
@@ -157,7 +172,7 @@ CALL [catalog].sys.drop_acl(
 | resource   | NO       | The resource to apply the ACL to (e.g., `cluster`, `cluster.db1`, `cluster.db1.table1`). If not specified, it will filter all the resource (same as `ANY`)                              |
 | permission | NO       | The permission to grant or deny to the principal on the resource (e.g., `ALLOW`, `DENY`). If If not specified, it will filter all the permission(same as `ANY`)                                           |
 | principal  | NO       | The principal to apply the ACL to (e.g., `User:alice`, `Role:admin`). If If not specified, it will filter all the principal(same as `ANY`)                                                                |
-| operation  | NO       | The operation to allow or deny for the principal on the resource (e.g., `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `ANY`, `ALL`). If If not specified, it will filter all the operation(same as `ANY`) |
+| operation  | NO       | The operation to allow or deny for the principal on the resource (e.g., `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `USAGE`, `ANY`, `ALL`). If If not specified, it will filter all the operation(same as `ANY`) |
 | host       | NO       | The host to apply the ACL to (e.g., `127.0.0.1`). If not specified, the ACL applies to all hosts( same as `ANY`)                                                                                        |
 
 ### List ACL
@@ -187,7 +202,7 @@ CALL [catalog].sys.drop_acl(
 | resource   | NO       | The resource to apply the ACL to (e.g., `cluster`, `cluster.db1`, `cluster.db1.table1`). If If not specified, it will filter all the resource(same as `ANY`)                              |
 | permission | NO       | The permission to grant or deny to the principal on the resource (e.g., `ALLOW`, `DENY`). If If not specified, it will filter all the permission(same as `ANY`)                                           |
 | principal  | NO       | The principal to apply the ACL to (e.g., `User:alice`, `Role:admin`). If If not specified, it will filter all the principal(same as `ANY`)                                                                |
-| operation  | NO       | The operation to allow or deny for the principal on the resource (e.g., `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `ANY`, `ALL`). If If not specified, it will filter all the operation(same as `ANY`) |
+| operation  | NO       | The operation to allow or deny for the principal on the resource (e.g., `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `USAGE`, `ANY`, `ALL`). If If not specified, it will filter all the operation(same as `ANY`) |
 | host       | NO       | The host to apply the ACL to (e.g., `127.0.0.1`). If not specified, the ACL applies to all hosts( same as `ANY`)                                                                                        |
 
 
@@ -200,4 +215,3 @@ Steps to Implement a Custom Authorization Logic:
 2.  **Server-Side Plugin Installation**:
     Build the plugin as a standalone JAR and copy it to the Fluss server’s plugin directory: `<FLUSS_HOME>/plugins/<custom_auth_plugin>/`. The server will automatically load the plugin at startup.
 3. **Configure the Desired Protocol**: Set  `org.apache.fluss.server.authorizer.AuthorizationPlugin.identifier` as the value of `authorizer.type` in the Fluss server configuration file.
-

@@ -115,6 +115,16 @@ public class DefaultAuthorizer extends AbstractAuthorizer implements FatalErrorH
                         OperationType.CREATE,
                         OperationType.DROP,
                         OperationType.ALTER));
+        map.put(
+                OperationType.USAGE,
+                Sets.newHashSet(
+                        OperationType.USAGE,
+                        OperationType.DESCRIBE,
+                        OperationType.READ,
+                        OperationType.WRITE,
+                        OperationType.CREATE,
+                        OperationType.DROP,
+                        OperationType.ALTER));
         OPS_MAPPING = Collections.unmodifiableMap(map);
     }
 

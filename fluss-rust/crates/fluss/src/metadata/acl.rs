@@ -63,6 +63,7 @@ pub enum OperationType {
     Drop,
     Alter,
     Describe,
+    Usage,
 }
 
 impl OperationType {
@@ -76,6 +77,7 @@ impl OperationType {
             Self::Drop => 6,
             Self::Alter => 7,
             Self::Describe => 8,
+            Self::Usage => 9,
         }
     }
 
@@ -89,6 +91,7 @@ impl OperationType {
             6 => Ok(Self::Drop),
             7 => Ok(Self::Alter),
             8 => Ok(Self::Describe),
+            9 => Ok(Self::Usage),
             _ => Err(Error::IllegalArgument {
                 message: format!("Unknown operation type code: {value}"),
             }),
@@ -297,6 +300,7 @@ mod tests {
             OperationType::Drop,
             OperationType::Alter,
             OperationType::Describe,
+            OperationType::Usage,
         ] {
             assert_eq!(OperationType::try_from_i32(v.to_i32()).unwrap(), v);
         }

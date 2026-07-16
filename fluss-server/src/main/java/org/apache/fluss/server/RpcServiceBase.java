@@ -221,7 +221,7 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
             Collection<Resource> authorizedDatabase =
                     authorizer.filterByAuthorized(
                             currentSession(),
-                            OperationType.DESCRIBE,
+                            OperationType.USAGE,
                             databaseNames.stream()
                                     .map(Resource::database)
                                     .collect(Collectors.toList()));
@@ -264,9 +264,7 @@ public abstract class RpcServiceBase extends RpcGatewayService implements AdminR
         if (!DEFAULT_DATABASE_NAME.equals(databaseName)
                 && authorizer != null
                 && !authorizer.isAuthorized(
-                        currentSession(),
-                        OperationType.DESCRIBE,
-                        Resource.database(databaseName))) {
+                        currentSession(), OperationType.USAGE, Resource.database(databaseName))) {
             LOG.debug(
                     "User {} not authorized to access database '{}', returning false",
                     currentSession().getPrincipal(),

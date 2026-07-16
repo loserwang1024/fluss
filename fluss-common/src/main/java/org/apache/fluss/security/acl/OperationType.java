@@ -27,7 +27,9 @@ import org.apache.fluss.annotation.PublicEvolving;
  * <p>1. {@link #ALL} grants permission for all operations
  *
  * <p>2. {@link #READ}, {@link #WRITE}, {@link #CREATE}, {@link #DROP}, and {@link #ALTER}
- * implicitly include {@link #DESCRIBE}
+ * implicitly include {@link #DESCRIBE} and {@link #USAGE}
+ *
+ * <p>3. {@link #DESCRIBE} implicitly includes {@link #USAGE}
  *
  * @since 0.7
  */
@@ -41,7 +43,8 @@ public enum OperationType {
     CREATE((byte) 5),
     DROP((byte) 6),
     ALTER((byte) 7),
-    DESCRIBE((byte) 8);
+    DESCRIBE((byte) 8),
+    USAGE((byte) 9);
 
     private final byte code;
 

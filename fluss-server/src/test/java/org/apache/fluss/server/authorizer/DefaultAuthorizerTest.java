@@ -64,6 +64,7 @@ import static org.apache.fluss.security.acl.OperationType.CREATE;
 import static org.apache.fluss.security.acl.OperationType.DESCRIBE;
 import static org.apache.fluss.security.acl.OperationType.DROP;
 import static org.apache.fluss.security.acl.OperationType.READ;
+import static org.apache.fluss.security.acl.OperationType.USAGE;
 import static org.apache.fluss.security.acl.OperationType.WRITE;
 import static org.apache.fluss.security.acl.ResourceType.DATABASE;
 import static org.apache.fluss.testutils.common.CommonTestUtils.retry;
@@ -311,24 +312,26 @@ public class DefaultAuthorizerTest {
         testOperationTypeImplicationsOfAllow(
                 Resource.cluster(),
                 OperationType.ALL,
-                Arrays.asList(READ, WRITE, CREATE, DROP, ALTER, DESCRIBE));
+                Arrays.asList(READ, WRITE, CREATE, DROP, ALTER, DESCRIBE, USAGE));
         testOperationTypeImplicationsOfAllow(
-                Resource.cluster(), OperationType.CREATE, Collections.singleton(DESCRIBE));
+                Resource.cluster(), OperationType.CREATE, Arrays.asList(DESCRIBE, USAGE));
         testOperationTypeImplicationsOfAllow(
-                Resource.cluster(), OperationType.DROP, Collections.singleton(DESCRIBE));
+                Resource.cluster(), OperationType.DROP, Arrays.asList(DESCRIBE, USAGE));
         testOperationTypeImplicationsOfAllow(
-                Resource.cluster(), ALTER, Collections.singleton(DESCRIBE));
+                Resource.cluster(), ALTER, Arrays.asList(DESCRIBE, USAGE));
+        testOperationTypeImplicationsOfAllow(
+                Resource.cluster(), DESCRIBE, Collections.singleton(USAGE));
+        testOperationTypeImplicationsOfAllow(Resource.cluster(), USAGE, Collections.emptyList());
 
-        // when we allow READ on any resource, we also allow to DESCRIBE and FILESYSTEM_TOKEN on
-        // cluster.
+        // When we allow READ or WRITE on any resource, we also allow DESCRIBE and USAGE.
         testOperationTypeImplicationsOfAllow(
-                Resource.cluster(), READ, Collections.singletonList(DESCRIBE));
+                Resource.cluster(), READ, Arrays.asList(DESCRIBE, USAGE));
         testOperationTypeImplicationsOfAllow(
-                Resource.cluster(), WRITE, Collections.singletonList(DESCRIBE));
+                Resource.cluster(), WRITE, Arrays.asList(DESCRIBE, USAGE));
         testOperationTypeImplicationsOfAllow(
-                Resource.database("database1"), READ, Collections.singletonList(DESCRIBE));
+                Resource.database("database1"), READ, Arrays.asList(DESCRIBE, USAGE));
         testOperationTypeImplicationsOfAllow(
-                Resource.table("database2", "table1"), WRITE, Collections.singletonList(DESCRIBE));
+                Resource.table("database2", "table1"), WRITE, Arrays.asList(DESCRIBE, USAGE));
     }
 
     private void testOperationTypeImplicationsOfAllow(
