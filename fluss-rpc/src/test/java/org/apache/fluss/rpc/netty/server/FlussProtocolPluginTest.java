@@ -50,7 +50,8 @@ class FlussProtocolPluginTest {
         Configuration changedRoot = credentials("root:new-root-pass,operator:operator-pass");
         assertThatThrownBy(() -> plugin.validate(changedRoot, OPERATOR))
                 .isInstanceOf(AuthorizationException.class)
-                .hasMessageContaining("Only configured super users may alter credentials");
+                .hasMessageContaining(
+                        "cannot modify credentials belonging to users in 'super.users'");
 
         // a super user may, and so may the server itself
         assertThatCode(() -> plugin.validate(changedRoot, ROOT)).doesNotThrowAnyException();

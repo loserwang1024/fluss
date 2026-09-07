@@ -34,6 +34,7 @@ import org.apache.fluss.shaded.netty4.io.netty.channel.ChannelHandler;
 import javax.annotation.Nullable;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +49,6 @@ public class FlussProtocolPlugin implements NetworkProtocolPlugin, ServerReconfi
 
     private static final String PLAIN_CREDENTIALS_CONFIG =
             ConfigOptions.SERVER_SASL_CREDENTIALS.key();
-    private static final String USER_PRINCIPAL_TYPE = "User";
 
     /** Pattern to match {@code user_<username>="<password>"} entries in JAAS config strings. */
     private static final Pattern JAAS_USER_PATTERN = Pattern.compile("user_(\\w+)=\"([^\"]*)\"");
@@ -263,17 +263,20 @@ public class FlussProtocolPlugin implements NetworkProtocolPlugin, ServerReconfi
                 superUserCredentials(currentPlainCredentials),
                 superUserCredentials(newCredentials))) {
             throw new AuthorizationException(
-                    "Only configured super users may alter credentials of configured super users.");
+                    String.format(
+                            "Principal %s cannot modify credentials belonging to users in 'super.users', "
+                                    + "the requester must itself be a super user.",
+                            requester));
         }
     }
 
-    /** Returns the merged credentials that belong to a configured super user. */
+    /** Returns the merged credentials whose username matches the name of a configured superuser. */
     private Map<String, String> superUserCredentials(@Nullable Map<String, String> credentials) {
-        Map<String, String> superUserCredentials = new LinkedHashMap<>();
+        Map<String, String> superUserCredentials = new HashMap<>();
         mergePlainCredentials(credentials)
                 .forEach(
                         (user, password) -> {
-                            if (isSuperUser(new FlussPrincipal(user, USER_PRINCIPAL_TYPE))) {
+                            if (isSuperUserName(user)) {
                                 superUserCredentials.put(user, password);
                             }
                         });
@@ -283,6 +286,15 @@ public class FlussProtocolPlugin implements NetworkProtocolPlugin, ServerReconfi
     private boolean isSuperUser(FlussPrincipal principal) {
         return superUsers.stream()
                 .anyMatch(superUser -> superUser.matches(principal, principalIgnoreCase));
+    }
+
+    private boolean isSuperUserName(String username) {
+        return superUsers.stream()
+                .anyMatch(
+                        superUser ->
+                                principalIgnoreCase
+                                        ? username.equalsIgnoreCase(superUser.getName())
+                                        : username.equals(superUser.getName()));
     }
 
     private static Set<FlussPrincipal> parseSuperUsers(Configuration configuration) {
