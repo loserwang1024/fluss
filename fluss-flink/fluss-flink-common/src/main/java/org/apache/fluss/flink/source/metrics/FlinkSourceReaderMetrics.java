@@ -19,6 +19,7 @@ package org.apache.fluss.flink.source.metrics;
 
 import org.apache.fluss.flink.source.reader.FlinkSourceReader;
 
+import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.groups.SourceReaderMetricGroup;
 import org.apache.flink.runtime.metrics.MetricNames;
 
@@ -32,6 +33,8 @@ public class FlinkSourceReaderMetrics {
 
     // For currentFetchEventTimeLag metric
     private volatile long currentFetchEventTimeLag = UNINITIALIZED;
+
+    private volatile boolean pendingRecordsGaugeRegistered;
 
     public FlinkSourceReaderMetrics(SourceReaderMetricGroup sourceReaderMetricGroup) {
         this.sourceReaderMetricGroup = sourceReaderMetricGroup;
@@ -48,6 +51,18 @@ public class FlinkSourceReaderMetrics {
             return;
         }
         currentFetchEventTimeLag = lag;
+    }
+
+    /**
+     * Registers the gauge reporting the number of log records that have not been fetched yet, which
+     * backs the standard Flink pendingRecords metric. Only the first registration takes effect, so
+     * that re-created split readers won't register the metric again.
+     */
+    public void registerPendingRecordsGauge(Gauge<Long> pendingRecordsGauge) {
+        if (!pendingRecordsGaugeRegistered) {
+            sourceReaderMetricGroup.setPendingRecordsGauge(pendingRecordsGauge);
+            pendingRecordsGaugeRegistered = true;
+        }
     }
 
     public SourceReaderMetricGroup getSourceReaderMetricGroup() {

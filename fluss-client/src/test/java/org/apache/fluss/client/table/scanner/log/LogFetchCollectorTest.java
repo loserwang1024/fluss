@@ -236,12 +236,35 @@ public class LogFetchCollectorTest {
         ScanRecords firstPoll = collector.collectFetch(logFetchBuffer);
         assertThat(firstPoll.records(tb).size()).isEqualTo(2);
         assertThat(logScannerStatus.getBucketOffset(tb)).isEqualTo(2L);
+        assertThat(logScannerStatus.recordsLag()).isEqualTo(8L);
         assertThat(completedFetch.isConsumed()).isFalse();
 
         ScanRecords secondPoll = collector.collectFetch(logFetchBuffer);
         assertThat(secondPoll.records(tb).size()).isEqualTo(2);
         assertThat(logScannerStatus.getBucketOffset(tb)).isEqualTo(4L);
+        assertThat(logScannerStatus.recordsLag()).isEqualTo(6L);
         assertThat(completedFetch.isConsumed()).isFalse();
+    }
+
+    @Test
+    void testRecordsLagAggregation() {
+        TableBucket initializedBucket = new TableBucket(DATA1_TABLE_ID, 0);
+        TableBucket uninitializedBucket = new TableBucket(DATA1_TABLE_ID, 1);
+        Map<TableBucket, Long> scanBuckets = new HashMap<>();
+        scanBuckets.put(initializedBucket, 2L);
+        scanBuckets.put(uninitializedBucket, LogScanner.EARLIEST_OFFSET);
+
+        LogScannerStatus scannerStatus = new LogScannerStatus();
+        scannerStatus.assignScanBuckets(scanBuckets);
+        scannerStatus.updateHighWatermark(initializedBucket, 10L);
+        assertThat(scannerStatus.recordsLag()).isEqualTo(8L);
+
+        scannerStatus.updateHighWatermark(uninitializedBucket, 7L);
+        scannerStatus.updateOffset(uninitializedBucket, 3L);
+        assertThat(scannerStatus.recordsLag()).isEqualTo(12L);
+
+        scannerStatus.unassignScanBuckets(Collections.singletonList(initializedBucket));
+        assertThat(scannerStatus.recordsLag()).isEqualTo(4L);
     }
 
     @Test

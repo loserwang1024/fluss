@@ -23,6 +23,8 @@ import org.apache.fluss.client.table.scanner.ScanRecord;
 import org.apache.fluss.client.table.writer.AppendWriter;
 import org.apache.fluss.client.table.writer.UpsertWriter;
 import org.apache.fluss.client.write.HashBucketAssigner;
+import org.apache.fluss.config.ConfigOptions;
+import org.apache.fluss.config.Configuration;
 import org.apache.fluss.flink.lake.split.LakeSnapshotAndFlussLogSplit;
 import org.apache.fluss.flink.source.metrics.FlinkSourceReaderMetrics;
 import org.apache.fluss.flink.source.split.HybridSnapshotLogSplit;
@@ -43,7 +45,9 @@ import org.apache.fluss.types.RowType;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsAddition;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
+import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.testutils.MetricListener;
+import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
 import org.apache.flink.table.api.ValidationException;
 import org.junit.jupiter.api.Test;
@@ -56,6 +60,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 
@@ -242,6 +247,68 @@ class FlinkSourceSplitReaderTest extends FlinkTestBase {
 
             assignSplitsAndFetchUntilRetrieveRecords(
                     splitReader, logSplits, expectedRecords, schema.getRowType());
+        }
+    }
+
+    @Test
+    void testPendingRecordsMetric() throws Exception {
+        Schema schema =
+                Schema.newBuilder()
+                        .column("id", DataTypes.INT())
+                        .column("name", DataTypes.STRING())
+                        .build();
+        TablePath tablePath = TablePath.of(DEFAULT_DB, "test-pending-records-metric");
+        long tableId =
+                createTable(
+                        tablePath,
+                        TableDescriptor.builder().schema(schema).distributedBy(1).build());
+        appendRows(tablePath, 5);
+
+        Configuration sourceConf = new Configuration(clientConf);
+        sourceConf.setInt(ConfigOptions.CLIENT_SCANNER_LOG_MAX_POLL_RECORDS, 1);
+        MetricListener metricListener = new MetricListener();
+        FlinkSourceReaderMetrics sourceReaderMetrics =
+                new FlinkSourceReaderMetrics(
+                        InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
+
+        try (FlinkSourceSplitReader splitReader =
+                new FlinkSourceSplitReader(
+                        sourceConf,
+                        tablePath,
+                        schema.getRowType(),
+                        null,
+                        null,
+                        null,
+                        sourceReaderMetrics)) {
+            // the metric is registered when the split reader creates the log scanner, and reports
+            // 0 before anything is fetched
+            Optional<Gauge<Long>> pendingRecords =
+                    metricListener.getGauge(MetricNames.PENDING_RECORDS);
+            assertThat(pendingRecords).isPresent();
+            assertThat((long) pendingRecords.get().getValue()).isEqualTo(0L);
+
+            TableBucket tableBucket = new TableBucket(tableId, 0);
+            LogSplit logSplit = new LogSplit(tableBucket, null, 0L);
+            splitReader.handleSplitsChanges(
+                    new SplitsAddition<>(Collections.singletonList(logSplit)));
+
+            // fetch the rows one by one, the lag should decrease accordingly. Note that a fetch
+            // may return no records when the poll times out before any record arrives.
+            int fetchedRows = 0;
+            while (fetchedRows < 5) {
+                RecordsWithSplitIds<RecordAndPos> records = splitReader.fetch();
+                int rowsInFetch = 0;
+                if (records.nextSplit() != null) {
+                    while (records.nextRecordFromSplit() != null) {
+                        rowsInFetch++;
+                    }
+                }
+                records.recycle();
+                if (rowsInFetch > 0) {
+                    fetchedRows += rowsInFetch;
+                    assertThat((long) pendingRecords.get().getValue()).isEqualTo(5 - fetchedRows);
+                }
+            }
         }
     }
 
