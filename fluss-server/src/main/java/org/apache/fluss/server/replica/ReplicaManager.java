@@ -1347,12 +1347,11 @@ public class ReplicaManager implements ServerReconfigurable {
                     // remote.
                     TableBucket tb = notifyRemoteLogOffsetsData.getTableBucket();
                     LogTablet logTablet = getReplicaOrException(tb).getLogTablet();
-                    logTablet.updateHighestCopiedEndOffset(
-                            notifyRemoteLogOffsetsData.getHighestCopiedEndOffset());
                     logTablet.updateRemoteLogStartOffset(
                             notifyRemoteLogOffsetsData.getRemoteLogStartOffset());
                     logTablet.updateRemoteLogEndOffset(
-                            notifyRemoteLogOffsetsData.getRemoteLogEndOffset());
+                            notifyRemoteLogOffsetsData.getRemoteLogEndOffset(),
+                            notifyRemoteLogOffsetsData.getHighestCopiedEndOffset());
                     responseCallback.accept(new NotifyRemoteLogOffsetsResponse());
                 });
     }

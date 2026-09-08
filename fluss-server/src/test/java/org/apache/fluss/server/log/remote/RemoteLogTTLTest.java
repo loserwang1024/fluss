@@ -147,7 +147,7 @@ final class RemoteLogTTLTest extends RemoteLogTestBase {
         // mock to update remote log end offset and remote log start offset as
         // NotifyRemoteLogOffsetsRequest do.
         logTablet.updateRemoteLogStartOffset(40L);
-        logTablet.updateRemoteLogEndOffset(40L);
+        logTablet.updateRemoteLogEndOffset(40L, 40L);
         CompletableFuture<Map<TableBucket, FetchLogResultForBucket>> future =
                 new CompletableFuture<>();
         replicaManager.fetchLogRecords(

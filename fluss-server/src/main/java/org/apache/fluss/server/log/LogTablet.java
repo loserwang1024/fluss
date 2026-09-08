@@ -649,25 +649,27 @@ public final class LogTablet {
         this.remoteLogSize = remoteLogSize;
     }
 
-    public void updateRemoteLogEndOffset(long remoteLogEndOffset) {
+    /**
+     * Updates the remote-readable end offset and copied watermark from one committed manifest.
+     *
+     * <p>The remote-readable end offset is published before advancing the copied watermark and
+     * deleting local segments. This prevents fetches from observing locally deleted offsets before
+     * the corresponding remote range becomes readable. Local segments are cleaned up at most once.
+     * Callers publishing a complete manifest must update the remote log start offset before calling
+     * this method because cleanup may begin before this method returns.
+     */
+    public void updateRemoteLogEndOffset(long remoteLogEndOffset, long highestCopiedEndOffset) {
+        boolean shouldCleanup = false;
         if ((remoteLogEndOffset == -1L && this.remoteLogEndOffset != -1L)
                 || remoteLogEndOffset > this.remoteLogEndOffset) {
             this.remoteLogEndOffset = remoteLogEndOffset;
-            // Before highestCopiedEndOffset was introduced, remoteLogEndOffset was also the copy
-            // progress watermark. Preserve that behavior for existing callers.
-            if (remoteLogEndOffset >= 0L) {
-                this.highestCopiedEndOffset =
-                        Math.max(this.highestCopiedEndOffset, remoteLogEndOffset);
-            }
-
-            // try to delete these segments already exist in remote storage.
-            deleteSegmentsAlreadyExistsInRemote();
+            shouldCleanup = true;
         }
-    }
-
-    public void updateHighestCopiedEndOffset(long highestCopiedEndOffset) {
         if (highestCopiedEndOffset > this.highestCopiedEndOffset) {
             this.highestCopiedEndOffset = highestCopiedEndOffset;
+            shouldCleanup = true;
+        }
+        if (shouldCleanup) {
             deleteSegmentsAlreadyExistsInRemote();
         }
     }

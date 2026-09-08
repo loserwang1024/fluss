@@ -401,10 +401,9 @@ public class LogTieringTask implements Runnable {
                     remoteLogTablet.loadRemoteLogManifest(newRemoteLogManifest);
                     LogTablet logTablet = replica.getLogTablet();
                     logTablet.updateRemoteLogStartOffset(newRemoteLogStartOffset);
-                    logTablet.updateHighestCopiedEndOffset(
+                    logTablet.updateRemoteLogEndOffset(
+                            newRemoteLogEndOffset,
                             newRemoteLogManifest.getHighestCopiedEndOffset());
-                    // make the local log cleaner clean log segments that are committed to remote.
-                    logTablet.updateRemoteLogEndOffset(newRemoteLogEndOffset);
                     logTablet.updateRemoteLogSize(newRemoteLogSize);
                     return true;
                 }
