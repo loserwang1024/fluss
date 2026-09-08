@@ -117,14 +117,14 @@ final class LogTabletTest extends LogTestBase {
     @Test
     void testRemoteLogEndOffsetCanReset() {
         logTablet.updateRemoteLogStartOffset(0L);
-        logTablet.updateRemoteLogEndOffset(10L);
+        logTablet.updateRemoteLogEndOffset(10L, 10L);
         assertThat(logTablet.canFetchFromRemoteLog(0L)).isTrue();
 
-        logTablet.updateRemoteLogEndOffset(-1L);
+        logTablet.updateRemoteLogEndOffset(-1L, -1L);
         assertThat(logTablet.canFetchFromRemoteLog(0L)).isFalse();
 
         // A new non-empty range can become readable after the empty state.
-        logTablet.updateRemoteLogEndOffset(5L);
+        logTablet.updateRemoteLogEndOffset(5L, 5L);
         assertThat(logTablet.canFetchFromRemoteLog(0L)).isTrue();
     }
 

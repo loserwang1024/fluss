@@ -649,25 +649,40 @@ public final class LogTablet {
         this.remoteLogSize = remoteLogSize;
     }
 
-    public void updateRemoteLogEndOffset(long remoteLogEndOffset) {
+    /**
+     * Updates the remote-readable end offset and copied watermark from one committed manifest.
+     *
+     * <p>The remote-readable end offset is published before advancing the copied watermark and
+     * deleting local segments. This prevents fetches from observing locally deleted offsets before
+     * the corresponding remote range becomes readable. Local segments are cleaned up at most once.
+     * Callers publishing a complete manifest must update the remote log start offset before calling
+     * this method because cleanup may begin before this method returns.
+     */
+    public void updateRemoteLogEndOffset(long remoteLogEndOffset, long highestCopiedEndOffset) {
+        boolean shouldCleanup = false;
         if ((remoteLogEndOffset == -1L && this.remoteLogEndOffset != -1L)
                 || remoteLogEndOffset > this.remoteLogEndOffset) {
             this.remoteLogEndOffset = remoteLogEndOffset;
-            // Before highestCopiedEndOffset was introduced, remoteLogEndOffset was also the copy
-            // progress watermark. Preserve that behavior for existing callers.
-            if (remoteLogEndOffset >= 0L) {
-                this.highestCopiedEndOffset =
-                        Math.max(this.highestCopiedEndOffset, remoteLogEndOffset);
-            }
-
-            // try to delete these segments already exist in remote storage.
-            deleteSegmentsAlreadyExistsInRemote();
+            shouldCleanup = true;
         }
-    }
-
-    public void updateHighestCopiedEndOffset(long highestCopiedEndOffset) {
         if (highestCopiedEndOffset > this.highestCopiedEndOffset) {
             this.highestCopiedEndOffset = highestCopiedEndOffset;
+            shouldCleanup = true;
+        }
+        // The remote-readable end offset should never trail the copied watermark unless the
+        // manifest is empty (remoteLogEndOffset == -1). A non-empty manifest with a readable end
+        // behind the copied watermark means local segments could be cleaned up beyond the range
+        // that is actually readable from remote, which risks an unreadable offset gap.
+        if (this.remoteLogEndOffset != -1L
+                && this.remoteLogEndOffset < this.highestCopiedEndOffset) {
+            LOG.warn(
+                    "Remote readable end offset {} is behind copied watermark {} for bucket {}; "
+                            + "local cleanup may drop offsets not yet readable from remote.",
+                    this.remoteLogEndOffset,
+                    this.highestCopiedEndOffset,
+                    getTableBucket());
+        }
+        if (shouldCleanup) {
             deleteSegmentsAlreadyExistsInRemote();
         }
     }
