@@ -400,8 +400,9 @@ public class LogTieringTask implements Runnable {
                     // TODO: commit with version to avoid the manifest has been updated
                     remoteLogTablet.loadRemoteLogManifest(newRemoteLogManifest);
                     LogTablet logTablet = replica.getLogTablet();
-                    logTablet.updateRemoteLogStartOffset(newRemoteLogStartOffset);
-                    logTablet.updateRemoteLogEndOffset(
+
+                    logTablet.updateRemoteLogOffsets(
+                            newRemoteLogStartOffset,
                             newRemoteLogEndOffset,
                             newRemoteLogManifest.getHighestCopiedEndOffset());
                     logTablet.updateRemoteLogSize(newRemoteLogSize);

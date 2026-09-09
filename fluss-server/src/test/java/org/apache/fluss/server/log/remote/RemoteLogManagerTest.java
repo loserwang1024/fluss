@@ -334,20 +334,24 @@ class RemoteLogManagerTest extends RemoteLogTestBase {
         RemoteLogTablet remoteLogTablet = remoteLogManager.remoteLogTablet(tableBucket);
         remoteLogTablet.loadRemoteLogManifest(
                 new RemoteLogManifest(
-                        logTablet.getPhysicalTablePath(), tableBucket, remoteSegments, 40L));
+                        logTablet.getPhysicalTablePath(),
+                        tableBucket,
+                        remoteSegments.subList(0, 2),
+                        40L));
 
-        // Remote is initially readable up to 20, while offset 25 is still available locally.
-        logTablet.updateRemoteLogStartOffset(0L);
-        logTablet.updateRemoteLogEndOffset(20L, 20L);
+        // An older manifest is readable only up to 20 even though copying has advanced to 40.
+        // Cleanup must remain bounded by the readable end, leaving offset 25 available locally.
+        logTablet.updateRemoteLogOffsets(0L, 20L, 40L);
         assertThat(logTablet.localLogStartOffset()).isEqualTo(20L);
 
         FetchLogResultForBucket localResult = fetch(tableBucket, 25L);
         assertThat(localResult.getError()).isEqualTo(ApiError.NONE);
         assertThat(localResult.fetchFromRemote()).isFalse();
 
-        // The new remote-readable range must be published before advancing the copied watermark
-        // deletes the local segment containing offset 25.
-        logTablet.updateRemoteLogEndOffset(40L, 40L);
+        remoteLogTablet.loadRemoteLogManifest(
+                new RemoteLogManifest(
+                        logTablet.getPhysicalTablePath(), tableBucket, remoteSegments, 40L));
+        logTablet.updateRemoteLogOffsets(0L, 40L, 40L);
         assertThat(logTablet.localLogStartOffset()).isEqualTo(30L);
         assertThat(logTablet.canFetchFromRemoteLog(25L)).isTrue();
 
@@ -374,7 +378,7 @@ class RemoteLogManagerTest extends RemoteLogTestBase {
 
         // 1. first, fetch records from remote.
         // mock to update remote log end offset and delete local log segments.
-        logTablet.updateRemoteLogEndOffset(40L, 40L);
+        logTablet.updateRemoteLogOffsets(0L, 40L, 40L);
         CompletableFuture<Map<TableBucket, FetchLogResultForBucket>> future =
                 new CompletableFuture<>();
         replicaManager.fetchLogRecords(
@@ -420,7 +424,7 @@ class RemoteLogManagerTest extends RemoteLogTestBase {
         LogTablet logTablet = replicaManager.getReplicaOrException(tb).getLogTablet();
         addMultiSegmentsToLogTablet(logTablet, 5);
         remoteLogTaskScheduler.triggerPeriodicScheduledTasks();
-        logTablet.updateRemoteLogEndOffset(40L, 40L);
+        logTablet.updateRemoteLogOffsets(0L, 40L, 40L);
 
         Map<TableBucket, FetchReqInfo> fetchData =
                 Collections.singletonMap(tb, new FetchReqInfo(tb.getTableId(), 35L, 1024 * 1024));
@@ -467,7 +471,7 @@ class RemoteLogManagerTest extends RemoteLogTestBase {
         LogTablet logTablet = replica.getLogTablet();
         addMultiSegmentsToLogTablet(logTablet, 5);
         remoteLogTaskScheduler.triggerPeriodicScheduledTasks();
-        logTablet.updateRemoteLogEndOffset(40L, 40L);
+        logTablet.updateRemoteLogOffsets(0L, 40L, 40L);
 
         int newLeaderId = TABLET_SERVER_ID + 1;
         replica.makeFollower(
@@ -520,7 +524,7 @@ class RemoteLogManagerTest extends RemoteLogTestBase {
         assertThat(remoteLog.allRemoteLogSegments()).hasSize(4);
 
         // 3. mock to update remote end offset, shouldn't cleanup local segments
-        logTablet.updateRemoteLogEndOffset(40L, 40L);
+        logTablet.updateRemoteLogOffsets(0L, 40L, 40L);
         assertThat(logTablet.getSegments()).hasSize(5);
 
         // 4. mock to update min retain, should remove the first 3 segments (end offset < 33)
