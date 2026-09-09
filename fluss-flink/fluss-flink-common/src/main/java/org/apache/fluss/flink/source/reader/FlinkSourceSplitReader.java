@@ -97,6 +97,7 @@ public class FlinkSourceSplitReader implements SplitReader<RecordAndPos, SourceS
     @Nullable private final int[] projectedFields;
 
     private final FlinkSourceReaderMetrics flinkSourceReaderMetrics;
+    private final Gauge<Long> recordsLagMetric;
 
     @Nullable private BoundedSplitReader currentBoundedSplitReader;
     @Nullable private SourceSplitBase currentBoundedSplit;
@@ -152,13 +153,14 @@ public class FlinkSourceSplitReader implements SplitReader<RecordAndPos, SourceS
         this.lakeSource = lakeSource;
 
         @SuppressWarnings("unchecked")
-        Gauge<Long> recordsLagGauge =
+        Gauge<Long> recordsLagMetric =
                 (Gauge<Long>)
                         checkNotNull(
                                 flinkMetricRegistry.getFlussMetric(MetricNames.SCANNER_RECORDS_LAG),
                                 "The gauge %s should have been registered by the log scanner.",
                                 MetricNames.SCANNER_RECORDS_LAG);
-        flinkSourceReaderMetrics.registerPendingRecordsGauge(recordsLagGauge::getValue);
+        this.recordsLagMetric = recordsLagMetric;
+        flinkSourceReaderMetrics.maybeAddRecordsLagMetric(recordsLagMetric);
     }
 
     @Override
@@ -643,6 +645,7 @@ public class FlinkSourceSplitReader implements SplitReader<RecordAndPos, SourceS
 
     @Override
     public void close() throws Exception {
+        flinkSourceReaderMetrics.removeRecordsLagMetric(recordsLagMetric);
         if (currentBoundedSplitReader != null) {
             currentBoundedSplitReader.close();
         }

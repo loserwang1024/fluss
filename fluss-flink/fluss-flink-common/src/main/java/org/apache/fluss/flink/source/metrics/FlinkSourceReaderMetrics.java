@@ -18,10 +18,13 @@
 package org.apache.fluss.flink.source.metrics;
 
 import org.apache.fluss.flink.source.reader.FlinkSourceReader;
+import org.apache.fluss.metrics.Gauge;
 
-import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.groups.SourceReaderMetricGroup;
 import org.apache.flink.runtime.metrics.MetricNames;
+
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** A collection class for handling metrics in {@link FlinkSourceReader} of Fluss. */
 public class FlinkSourceReaderMetrics {
@@ -30,11 +33,12 @@ public class FlinkSourceReaderMetrics {
 
     // Source reader metric group
     private final SourceReaderMetricGroup sourceReaderMetricGroup;
+    private final Set<Gauge<Long>> recordsLagMetrics = ConcurrentHashMap.newKeySet();
 
     // For currentFetchEventTimeLag metric
     private volatile long currentFetchEventTimeLag = UNINITIALIZED;
 
-    private volatile boolean pendingRecordsGaugeRegistered;
+    private boolean pendingRecordsGaugeRegistered;
 
     public FlinkSourceReaderMetrics(SourceReaderMetricGroup sourceReaderMetricGroup) {
         this.sourceReaderMetricGroup = sourceReaderMetricGroup;
@@ -54,18 +58,31 @@ public class FlinkSourceReaderMetrics {
     }
 
     /**
-     * Registers the gauge reporting the number of log records that have not been fetched yet, which
-     * backs the standard Flink pendingRecords metric. Only the first registration takes effect, so
-     * that re-created split readers won't register the metric again.
+     * Adds a scanner's records-lag metric to the metrics tracked by the standard Flink
+     * pendingRecords gauge. The Flink gauge itself is registered only once.
      */
-    public void registerPendingRecordsGauge(Gauge<Long> pendingRecordsGauge) {
+    public synchronized void maybeAddRecordsLagMetric(Gauge<Long> recordsLagMetric) {
+        recordsLagMetrics.add(recordsLagMetric);
         if (!pendingRecordsGaugeRegistered) {
-            sourceReaderMetricGroup.setPendingRecordsGauge(pendingRecordsGauge);
+            sourceReaderMetricGroup.setPendingRecordsGauge(this::getPendingRecords);
             pendingRecordsGaugeRegistered = true;
         }
     }
 
+    /** Removes a scanner's records-lag metric from the tracked metrics. */
+    public void removeRecordsLagMetric(Gauge<Long> recordsLagMetric) {
+        recordsLagMetrics.remove(recordsLagMetric);
+    }
+
     public SourceReaderMetricGroup getSourceReaderMetricGroup() {
         return sourceReaderMetricGroup;
+    }
+
+    private long getPendingRecords() {
+        long pendingRecords = 0L;
+        for (Gauge<Long> recordsLagMetric : recordsLagMetrics) {
+            pendingRecords += recordsLagMetric.getValue();
+        }
+        return pendingRecords;
     }
 }

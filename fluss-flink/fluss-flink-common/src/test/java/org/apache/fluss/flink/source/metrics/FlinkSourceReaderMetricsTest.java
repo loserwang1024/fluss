@@ -52,7 +52,7 @@ class FlinkSourceReaderMetricsTest {
     }
 
     @Test
-    void testPendingRecords() {
+    void testPendingRecordsGaugeTracksActiveScanners() {
         MetricListener metricListener = new MetricListener();
         FlinkSourceReaderMetrics flinkSourceReaderMetrics =
                 new FlinkSourceReaderMetrics(
@@ -61,13 +61,28 @@ class FlinkSourceReaderMetricsTest {
         // the metric is not registered until a log scanner provides its records lag
         assertThat(metricListener.getGauge(MetricNames.PENDING_RECORDS)).isEmpty();
 
-        AtomicLong recordsLag = new AtomicLong(10L);
-        flinkSourceReaderMetrics.registerPendingRecordsGauge(recordsLag::get);
+        AtomicLong firstRecordsLag = new AtomicLong(10L);
+        org.apache.fluss.metrics.Gauge<Long> firstRecordsLagMetric = firstRecordsLag::get;
+        flinkSourceReaderMetrics.maybeAddRecordsLagMetric(firstRecordsLagMetric);
         Optional<Gauge<Long>> pendingRecords = metricListener.getGauge(MetricNames.PENDING_RECORDS);
         assertThat(pendingRecords).isPresent();
         assertThat((long) pendingRecords.get().getValue()).isEqualTo(10L);
 
-        recordsLag.set(3L);
-        assertThat((long) pendingRecords.get().getValue()).isEqualTo(3L);
+        AtomicLong secondRecordsLag = new AtomicLong(7L);
+        org.apache.fluss.metrics.Gauge<Long> secondRecordsLagMetric = secondRecordsLag::get;
+        flinkSourceReaderMetrics.maybeAddRecordsLagMetric(secondRecordsLagMetric);
+        assertThat(metricListener.getGauge(MetricNames.PENDING_RECORDS).get())
+                .isSameAs(pendingRecords.get());
+        assertThat((long) pendingRecords.get().getValue()).isEqualTo(17L);
+
+        firstRecordsLag.set(3L);
+        assertThat((long) pendingRecords.get().getValue()).isEqualTo(10L);
+
+        flinkSourceReaderMetrics.removeRecordsLagMetric(firstRecordsLagMetric);
+        secondRecordsLag.set(4L);
+        assertThat((long) pendingRecords.get().getValue()).isEqualTo(4L);
+
+        flinkSourceReaderMetrics.removeRecordsLagMetric(secondRecordsLagMetric);
+        assertThat((long) pendingRecords.get().getValue()).isEqualTo(0L);
     }
 }
