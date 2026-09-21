@@ -655,10 +655,13 @@ class RemoteLogDownloaderTest {
                     .isInstanceOf(IOException.class)
                     .hasMessageContaining(
                             String.format(
-                                    "Failed to download remote log segment file %s, retry count 5",
+                                    "Failed to download remote log segment file %s, retry count %d",
                                     RemoteLogDownloader.getFsPathAndFileName(
                                                     remoteLogDir, nonExistLogSegment)
-                                            .getFileName()))
+                                            .getFileName(),
+                                    conf.getInt(
+                                            ConfigOptions
+                                                    .CLIENT_SCANNER_REMOTE_LOG_FETCH_MAX_RETRIES)))
                     .rootCause()
                     .hasMessageContaining("Test fetch exception");
             assertThat(scannerMetricGroup.remoteFetchRequestCount().getCount()).isEqualTo(6);
@@ -677,6 +680,53 @@ class RemoteLogDownloaderTest {
                     remoteLogDownloader.requestRemoteLog(remoteLogDir, secondLogSegment);
             retry(Duration.ofMinutes(1), () -> assertThat(secondDownloadFuture.isDone()).isTrue());
             assertThat(scannerMetricGroup.remoteFetchRequestCount().getCount()).isEqualTo(12);
+        } finally {
+            IOUtils.closeQuietly(remoteLogDownloader);
+            IOUtils.closeQuietly(remoteFileDownloader);
+        }
+    }
+
+    @Test
+    void testConfigurableMaxRetryCount() {
+        conf.set(ConfigOptions.CLIENT_SCANNER_REMOTE_LOG_PREFETCH_NUM, 1);
+        conf.set(ConfigOptions.CLIENT_SCANNER_REMOTE_LOG_FETCH_MAX_RETRIES, 0);
+        RemoteFileDownloader remoteFileDownloader =
+                new RemoteFileDownloader(1) {
+                    @Override
+                    protected long downloadFile(Path targetFilePath, FsPath remoteFilePath)
+                            throws IOException {
+                        throw new IOException("Test fetch exception");
+                    }
+                };
+        RemoteLogDownloader remoteLogDownloader =
+                new RemoteLogDownloader(
+                        DATA1_TABLE_PATH.toString(),
+                        conf,
+                        remoteFileDownloader,
+                        scannerMetricGroup,
+                        10L);
+        try {
+            remoteLogDownloader.start();
+            TableBucket tableBucket = new TableBucket(DATA1_TABLE_ID, 0);
+            RemoteLogSegment segment =
+                    RemoteLogSegment.Builder.builder()
+                            .tableBucket(tableBucket)
+                            .physicalTablePath(DATA1_PHYSICAL_TABLE_PATH)
+                            .remoteLogSegmentId(UUID.randomUUID())
+                            .remoteLogStartOffset(1)
+                            .remoteLogEndOffset(2)
+                            .maxTimestamp(2)
+                            .segmentSizeInBytes(Integer.MAX_VALUE)
+                            .build();
+
+            RemoteLogDownloadFuture future =
+                    remoteLogDownloader.requestRemoteLog(remoteLogDir, segment);
+            retry(Duration.ofMinutes(1), () -> assertThat(future.isDone()).isTrue());
+            assertThat(scannerMetricGroup.remoteFetchRequestCount().getCount()).isEqualTo(1);
+            assertThatThrownBy(() -> future.getFileLogRecords(1))
+                    .cause()
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("retry count 0");
         } finally {
             IOUtils.closeQuietly(remoteLogDownloader);
             IOUtils.closeQuietly(remoteFileDownloader);

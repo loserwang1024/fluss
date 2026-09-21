@@ -28,6 +28,7 @@ import org.apache.fluss.fs.FsPathAndFileName;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.remote.RemoteLogSegment;
 import org.apache.fluss.utils.ExceptionUtils;
+import org.apache.fluss.utils.ExponentialBackoff;
 import org.apache.fluss.utils.FlussPaths;
 import org.apache.fluss.utils.concurrent.ShutdownableThread;
 
@@ -62,7 +63,17 @@ public class RemoteLogDownloader implements Closeable {
     private static final Logger LOG = LoggerFactory.getLogger(RemoteLogDownloader.class);
 
     private static final long POLL_TIMEOUT = 5000L;
-    private static final int MAX_RETRY_COUNT = 5;
+    private static final long RETRY_BACKOFF_INITIAL_MS = 100L;
+    private static final int RETRY_BACKOFF_MULTIPLIER = 2;
+    private static final long RETRY_BACKOFF_MAX_MS = 5000L;
+    private static final double RETRY_BACKOFF_JITTER = 0.25D;
+    private static final ExponentialBackoff RETRY_BACKOFF =
+            new ExponentialBackoff(
+                    RETRY_BACKOFF_INITIAL_MS,
+                    RETRY_BACKOFF_MULTIPLIER,
+                    RETRY_BACKOFF_MAX_MS,
+                    RETRY_BACKOFF_JITTER);
+    private final int maxRetryCount;
 
     private final Path localLogDir;
 
@@ -108,6 +119,7 @@ public class RemoteLogDownloader implements Closeable {
         this.remoteFileDownloader = remoteFileDownloader;
         this.scannerMetricGroup = scannerMetricGroup;
         this.pollTimeout = pollTimeout;
+        this.maxRetryCount = conf.getInt(ConfigOptions.CLIENT_SCANNER_REMOTE_LOG_FETCH_MAX_RETRIES);
         this.prefetchSemaphore =
                 new Semaphore(conf.getInt(ConfigOptions.CLIENT_SCANNER_REMOTE_LOG_PREFETCH_NUM));
         // The local tmp dir to store the fetched log segment files,
@@ -172,11 +184,21 @@ public class RemoteLogDownloader implements Closeable {
             return;
         }
 
-        downloadRemoteLog(request, MAX_RETRY_COUNT, System.currentTimeMillis());
+        downloadRemoteLog(request, maxRetryCount, System.currentTimeMillis());
     }
 
     private void downloadRemoteLog(
             RemoteLogDownloadRequest request, int retryCount, long startTime) {
+        if (closed || request.future.isCancelled()) {
+            if (!request.future.isDone()) {
+                request.future.cancel(false);
+            }
+            prefetchSemaphore.release();
+            if (closed) {
+                deleteDirectoryQuietly(localLogDir.toFile());
+            }
+            return;
+        }
         try {
             // 1. cleanup the finished logs first to free up disk space
             cleanupRemoteLogs();
@@ -267,6 +289,27 @@ public class RemoteLogDownloader implements Closeable {
                 ExceptionUtils.stripExecutionException(throwable));
         scannerMetricGroup.remoteFetchErrorCount().inc();
         if (retryCount >= 1) {
+            long backoffMs = RETRY_BACKOFF.backoff(maxRetryCount - retryCount);
+            LOG.warn(
+                    "Retrying download of remote log segment file {} for table bucket {} "
+                            + "in {} ms (retry {}/{}).",
+                    request.getFsPathAndFileName().getFileName(),
+                    request.getTableBucket(),
+                    backoffMs,
+                    maxRetryCount - retryCount + 1,
+                    maxRetryCount);
+            try {
+                Thread.sleep(backoffMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                prefetchSemaphore.release();
+                request.future.completeExceptionally(
+                        new IOException(
+                                "Interrupted while retrying download of remote log segment file "
+                                        + request.getFsPathAndFileName().getFileName(),
+                                e));
+                return;
+            }
             downloadRemoteLog(request, retryCount - 1, startTime);
         } else {
             prefetchSemaphore.release();
@@ -274,7 +317,7 @@ public class RemoteLogDownloader implements Closeable {
                     new IOException(
                             String.format(
                                     "Failed to download remote log segment file %s, retry count %d",
-                                    request.getFsPathAndFileName().getFileName(), MAX_RETRY_COUNT),
+                                    request.getFsPathAndFileName().getFileName(), maxRetryCount),
                             throwable));
         }
     }
