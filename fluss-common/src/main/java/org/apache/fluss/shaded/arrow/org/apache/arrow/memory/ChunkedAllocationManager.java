@@ -309,7 +309,7 @@ public class ChunkedAllocationManager extends AllocationManager {
         private final Deque<Chunk> freeChunks = new ArrayDeque<>();
 
         /** Total direct memory, in bytes, currently allocated by this factory. */
-        private final AtomicLong directMemoryUsedBytes = new AtomicLong();
+        private final AtomicLong directMemoryAllocatedBytes = new AtomicLong();
 
         /** Set to true when {@link #close()} is called. */
         private boolean closed;
@@ -343,7 +343,7 @@ public class ChunkedAllocationManager extends AllocationManager {
                             "Allocation size " + size + " exceeds maximum " + Integer.MAX_VALUE);
                 }
                 ByteBuf directByteBuf = UnpooledByteBufAllocator.DEFAULT.directBuffer((int) size);
-                directMemoryUsedBytes.addAndGet(size);
+                directMemoryAllocatedBytes.addAndGet(size);
                 return new ChunkedAllocationManager(accountingAllocator, directByteBuf, size, this);
             }
 
@@ -375,7 +375,7 @@ public class ChunkedAllocationManager extends AllocationManager {
                 return recycled;
             }
             Chunk chunk = new Chunk(chunkSize, this);
-            directMemoryUsedBytes.addAndGet(chunkSize);
+            directMemoryAllocatedBytes.addAndGet(chunkSize);
             return chunk;
         }
 
@@ -439,19 +439,19 @@ public class ChunkedAllocationManager extends AllocationManager {
             }
         }
 
-        /** Returns the direct memory, in bytes, currently used by this factory. */
-        public long getDirectMemoryUsedBytes() {
-            return directMemoryUsedBytes.get();
+        /** Returns the direct memory, in bytes, currently allocated by this factory. */
+        public long getDirectMemoryAllocatedBytes() {
+            return directMemoryAllocatedBytes.get();
         }
 
         private void destroyChunk(Chunk chunk) {
             long cap = chunk.capacity;
             chunk.destroy();
-            directMemoryUsedBytes.addAndGet(-cap);
+            directMemoryAllocatedBytes.addAndGet(-cap);
         }
 
         void decrementDirectMemoryBytes(long size) {
-            directMemoryUsedBytes.addAndGet(-size);
+            directMemoryAllocatedBytes.addAndGet(-size);
         }
 
         @VisibleForTesting

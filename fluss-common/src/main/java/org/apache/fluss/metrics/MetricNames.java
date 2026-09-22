@@ -342,8 +342,8 @@ public class MetricNames {
             "accumulatorHeapMemoryUsedBytes";
     public static final String WRITER_ACCUMULATOR_ARROW_MEMORY_USED_BYTES =
             "accumulatorArrowMemoryUsedBytes";
-    public static final String WRITER_ACCUMULATOR_DIRECT_MEMORY_USED_BYTES =
-            "accumulatorDirectMemoryUsedBytes";
+    public static final String WRITER_ACCUMULATOR_DIRECT_MEMORY_ALLOCATED_BYTES =
+            "accumulatorDirectMemoryAllocatedBytes";
 
     // for scanner
     public static final String SCANNER_TIME_MS_BETWEEN_POLL = "timeMsBetweenPoll";

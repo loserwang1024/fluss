@@ -72,33 +72,33 @@ class ChunkedAllocationManagerTest {
     }
 
     @Test
-    void testDirectMemoryUsedBytesTracksChunksAndDirectAllocations() {
-        assertThat(factory.getDirectMemoryUsedBytes()).isZero();
+    void testDirectMemoryAllocatedBytesTracksChunksAndDirectAllocations() {
+        assertThat(factory.getDirectMemoryAllocatedBytes()).isZero();
 
         try (ArrowBuf small = allocator.buffer(64)) {
             assertThat(small.capacity()).isEqualTo(64L);
-            assertThat(factory.getDirectMemoryUsedBytes()).isEqualTo(TEST_CHUNK_SIZE);
+            assertThat(factory.getDirectMemoryAllocatedBytes()).isEqualTo(TEST_CHUNK_SIZE);
 
             try (ArrowBuf direct = allocator.buffer(TEST_CHUNK_SIZE + 1)) {
                 assertThat(direct.capacity()).isEqualTo(2 * TEST_CHUNK_SIZE);
                 // allocate a new direct buffer(which not resued)
-                assertThat(factory.getDirectMemoryUsedBytes())
+                assertThat(factory.getDirectMemoryAllocatedBytes())
                         .isEqualTo(TEST_CHUNK_SIZE + direct.capacity());
             }
 
-            assertThat(factory.getDirectMemoryUsedBytes()).isEqualTo(TEST_CHUNK_SIZE);
+            assertThat(factory.getDirectMemoryAllocatedBytes()).isEqualTo(TEST_CHUNK_SIZE);
 
             try (ArrowBuf anotherSmall = allocator.buffer(64)) {
                 assertThat(anotherSmall.capacity()).isEqualTo(64L);
                 // reuse the same chunk.
-                assertThat(factory.getDirectMemoryUsedBytes()).isEqualTo(TEST_CHUNK_SIZE);
+                assertThat(factory.getDirectMemoryAllocatedBytes()).isEqualTo(TEST_CHUNK_SIZE);
             }
         }
 
         // The empty active chunk remains cached until the factory is closed.
-        assertThat(factory.getDirectMemoryUsedBytes()).isEqualTo(TEST_CHUNK_SIZE);
+        assertThat(factory.getDirectMemoryAllocatedBytes()).isEqualTo(TEST_CHUNK_SIZE);
         factory.close();
-        assertThat(factory.getDirectMemoryUsedBytes()).isZero();
+        assertThat(factory.getDirectMemoryAllocatedBytes()).isZero();
     }
 
     @Test
@@ -320,7 +320,7 @@ class ChunkedAllocationManagerTest {
         for (int i = 0; i < 4; i++) {
             bufs.add(localAllocator.buffer(64));
         }
-        assertThat(localFactory.getDirectMemoryUsedBytes()).isEqualTo(TEST_CHUNK_SIZE);
+        assertThat(localFactory.getDirectMemoryAllocatedBytes()).isEqualTo(TEST_CHUNK_SIZE);
 
         // Close factory while ArrowBufs are still alive.
 
@@ -328,14 +328,14 @@ class ChunkedAllocationManagerTest {
 
         // Active chunk was not destroyed (subAllocCount > 0), just nulled.
         assertThat(localFactory.getActiveChunk()).isNull();
-        assertThat(localFactory.getDirectMemoryUsedBytes()).isEqualTo(TEST_CHUNK_SIZE);
+        assertThat(localFactory.getDirectMemoryAllocatedBytes()).isEqualTo(TEST_CHUNK_SIZE);
 
         // Release all ArrowBufs — onChunkDrained should destroy the chunk, not recycle it.
         bufs.forEach(ArrowBuf::close);
 
         // The chunk must NOT have been added to freeChunks (would be a leak).
         assertThat(localFactory.getFreeChunks()).isEmpty();
-        assertThat(localFactory.getDirectMemoryUsedBytes()).isZero();
+        assertThat(localFactory.getDirectMemoryAllocatedBytes()).isZero();
         localAllocator.close();
     }
 
@@ -349,19 +349,19 @@ class ChunkedAllocationManagerTest {
         // Allocate a large buffer that bypasses chunk sub-allocation.
         ArrowBuf directBuf = localAllocator.buffer(TEST_CHUNK_SIZE + 1);
         long directCapacity = directBuf.capacity();
-        assertThat(localFactory.getDirectMemoryUsedBytes()).isEqualTo(directCapacity);
+        assertThat(localFactory.getDirectMemoryAllocatedBytes()).isEqualTo(directCapacity);
 
         // Close factory while the direct ArrowBuf is still alive.
         localFactory.close();
 
         // Memory is still tracked (ArrowBuf not yet released).
-        assertThat(localFactory.getDirectMemoryUsedBytes()).isEqualTo(directCapacity);
+        assertThat(localFactory.getDirectMemoryAllocatedBytes()).isEqualTo(directCapacity);
 
         // Release the ArrowBuf — should properly free the direct ByteBuf and decrement.
         directBuf.close();
 
         // The direct allocation is freed.
-        assertThat(localFactory.getDirectMemoryUsedBytes()).isZero();
+        assertThat(localFactory.getDirectMemoryAllocatedBytes()).isZero();
         localAllocator.close();
     }
 
@@ -389,13 +389,13 @@ class ChunkedAllocationManagerTest {
         for (int cycle = 0; cycle < 5; cycle++) {
             ArrowBuf directBuf = localAllocator.buffer(directSize);
             long directCapacity = directBuf.capacity();
-            assertThat(localFactory.getDirectMemoryUsedBytes()).isEqualTo(directCapacity);
+            assertThat(localFactory.getDirectMemoryAllocatedBytes()).isEqualTo(directCapacity);
             directBuf.close();
-            assertThat(localFactory.getDirectMemoryUsedBytes()).isZero();
+            assertThat(localFactory.getDirectMemoryAllocatedBytes()).isZero();
         }
 
         localFactory.close();
-        assertThat(localFactory.getDirectMemoryUsedBytes()).isZero();
+        assertThat(localFactory.getDirectMemoryAllocatedBytes()).isZero();
         localAllocator.close();
     }
 }

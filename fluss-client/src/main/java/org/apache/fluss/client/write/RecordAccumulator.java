@@ -213,8 +213,8 @@ public final class RecordAccumulator {
                 MetricNames.WRITER_ACCUMULATOR_ARROW_MEMORY_USED_BYTES,
                 bufferAllocator::getAllocatedMemory);
         writerMetricGroup.gauge(
-                MetricNames.WRITER_ACCUMULATOR_DIRECT_MEMORY_USED_BYTES,
-                chunkedFactory::getDirectMemoryUsedBytes);
+                MetricNames.WRITER_ACCUMULATOR_DIRECT_MEMORY_ALLOCATED_BYTES,
+                chunkedFactory::getDirectMemoryAllocatedBytes);
     }
 
     /** Assigns and appends a record using the layout owned by its write context. */

@@ -163,7 +163,7 @@ class RecordAccumulatorTest {
                     .containsKeys(
                             MetricNames.WRITER_ACCUMULATOR_HEAP_MEMORY_USED_BYTES,
                             MetricNames.WRITER_ACCUMULATOR_ARROW_MEMORY_USED_BYTES,
-                            MetricNames.WRITER_ACCUMULATOR_DIRECT_MEMORY_USED_BYTES);
+                            MetricNames.WRITER_ACCUMULATOR_DIRECT_MEMORY_ALLOCATED_BYTES);
 
             Gauge<?> heapMemoryUsed =
                     (Gauge<?>)
@@ -173,14 +173,16 @@ class RecordAccumulatorTest {
                     (Gauge<?>)
                             metrics.getMetrics()
                                     .get(MetricNames.WRITER_ACCUMULATOR_ARROW_MEMORY_USED_BYTES);
-            Gauge<?> directMemoryUsedBytes =
+            Gauge<?> directMemoryAllocatedBytes =
                     (Gauge<?>)
                             metrics.getMetrics()
-                                    .get(MetricNames.WRITER_ACCUMULATOR_DIRECT_MEMORY_USED_BYTES);
+                                    .get(
+                                            MetricNames
+                                                    .WRITER_ACCUMULATOR_DIRECT_MEMORY_ALLOCATED_BYTES);
 
             assertThat(((Number) heapMemoryUsed.getValue()).longValue()).isZero();
             assertThat(((Number) arrowMemoryUsed.getValue()).longValue()).isZero();
-            assertThat(((Number) directMemoryUsedBytes.getValue()).longValue()).isZero();
+            assertThat(((Number) directMemoryAllocatedBytes.getValue()).longValue()).isZero();
 
             bucketAssigner.setBucketId(0);
             accum.append(
@@ -191,7 +193,7 @@ class RecordAccumulatorTest {
 
             long heapMemory = ((Number) heapMemoryUsed.getValue()).longValue();
             long arrowMemory = ((Number) arrowMemoryUsed.getValue()).longValue();
-            long directMemory = ((Number) directMemoryUsedBytes.getValue()).longValue();
+            long directMemory = ((Number) directMemoryAllocatedBytes.getValue()).longValue();
             assertThat(heapMemory).isPositive();
             assertThat(arrowMemory).isPositive();
             assertThat(directMemory).isGreaterThanOrEqualTo(arrowMemory);
