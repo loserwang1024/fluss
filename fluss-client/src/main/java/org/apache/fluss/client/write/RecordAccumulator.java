@@ -279,12 +279,18 @@ public final class RecordAccumulator {
                                     .orElse(null);
         }
         return new BucketAndWriteBatches(
+                tableInfo,
                 partitionId,
                 bucketCount,
                 tempBucketCount,
                 bucketAssignerFactory.createBucketAssigner(tableInfo, path),
                 tableInfo.isPartitioned(),
                 path);
+    }
+
+    TableInfo getTableInfo(PhysicalTablePath path) {
+        return checkNotNull(writeBatches.get(path), "Write target for %s must exist.", path)
+                .tableInfo;
     }
 
     /**
@@ -396,6 +402,7 @@ public final class RecordAccumulator {
         int bucketCount = tableInfo.getNumBuckets();
         BucketAndWriteBatches resolvedTarget =
                 new BucketAndWriteBatches(
+                        tableInfo,
                         targetPartitionId,
                         bucketCount,
                         bucketCount,
@@ -1601,6 +1608,8 @@ public final class RecordAccumulator {
     private static class BucketAndWriteBatches {
         public final boolean isPartitionedTable;
 
+        private final TableInfo tableInfo;
+
         /**
          * The temporary bucket count used for routing before the authoritative bucket count is
          * known.
@@ -1621,12 +1630,14 @@ public final class RecordAccumulator {
         public final Map<Integer, Deque<WriteBatch>> batches = new CopyOnWriteMap<>();
 
         private BucketAndWriteBatches(
+                TableInfo tableInfo,
                 @Nullable Long partitionId,
                 @Nullable Integer bucketCount,
                 int tempBucketCount,
                 BucketAssigner bucketAssigner,
                 boolean isPartitionedTable,
                 PhysicalTablePath targetPath) {
+            this.tableInfo = tableInfo;
             this.partitionId = partitionId;
             this.bucketCount = bucketCount;
             this.tempBucketCount = tempBucketCount;
