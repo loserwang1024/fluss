@@ -17,6 +17,7 @@
 
 package org.apache.fluss.flink.source.lookup;
 
+import org.apache.fluss.annotation.Internal;
 import org.apache.fluss.annotation.VisibleForTesting;
 import org.apache.fluss.client.Connection;
 import org.apache.fluss.client.ConnectionFactory;
@@ -43,6 +44,8 @@ import org.apache.flink.metrics.MetricGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
+
 import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
@@ -50,33 +53,35 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 
 import static org.apache.fluss.utils.Preconditions.checkState;
 
 /**
- * Owns the local lookup cache, its snapshot bootstrap and changelog worker.
+ * Owns the bucket-sharded lookup cache, its snapshot bootstrap and changelog worker.
  *
  * <p>Reads wait for bootstrap and are synchronized with changelog batches and closure. A failed
  * batch makes the cache unreadable before releasing the write lock. Returned values are independent
  * byte arrays and can be decoded after releasing the read lock.
  */
-final class FullCacheLookupRuntime implements AutoCloseable {
+@Internal
+final class FullCacheLookupTable implements AutoCloseable {
 
-    private static final Logger LOG = LoggerFactory.getLogger(FullCacheLookupRuntime.class);
-    private static final Duration LOG_POLL_TIMEOUT = Duration.ofSeconds(1);
+    private static final Logger LOG = LoggerFactory.getLogger(FullCacheLookupTable.class);
 
     private final Configuration flussConfig;
     private final TablePath tablePath;
     private final int numBuckets;
+    private final FullCacheLookupOptions cacheOptions;
+    private final Function<Table, LogScanner> scannerFactory;
     private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private final Object stateLock = new Object();
     private final CountDownLatch bootstrapReady = new CountDownLatch(1);
-    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     private Connection connection;
     private Table table;
-    private LogScanner logScanner;
+    private volatile LogScanner logScanner;
     private RocksDBLookupStore cacheStore;
     private Thread workerThread;
     private KeyEncoder primaryKeyEncoder;
@@ -85,9 +90,31 @@ final class FullCacheLookupRuntime implements AutoCloseable {
     private volatile long snapshotRows;
     private volatile long bootstrapDurationMs;
     private volatile boolean ready;
+    private volatile boolean closed;
 
-    FullCacheLookupRuntime(Configuration flussConfig, TablePath tablePath, int numBuckets) {
+    FullCacheLookupTable(
+            Configuration flussConfig,
+            TablePath tablePath,
+            int numBuckets,
+            FullCacheLookupOptions cacheOptions) {
+        this(
+                flussConfig,
+                tablePath,
+                numBuckets,
+                cacheOptions,
+                table -> table.newScan().createLogScanner());
+    }
+
+    @VisibleForTesting
+    FullCacheLookupTable(
+            Configuration flussConfig,
+            TablePath tablePath,
+            int numBuckets,
+            FullCacheLookupOptions cacheOptions,
+            Function<Table, LogScanner> scannerFactory) {
         this.flussConfig = flussConfig;
+        this.cacheOptions = cacheOptions;
+        this.scannerFactory = scannerFactory;
         this.tablePath = tablePath;
         this.numBuckets = numBuckets;
     }
@@ -102,10 +129,7 @@ final class FullCacheLookupRuntime implements AutoCloseable {
             TableInfo tableInfo = table.getTableInfo();
             checkState(
                     !tableInfo.isPartitioned(),
-                    "Full lookup cache does not support partitioned tables.");
-            checkState(
-                    !tableInfo.getTableConfig().getDataLakeFormat().isPresent(),
-                    "Full lookup cache does not support datalake-enabled tables.");
+                    "Bucket-sharded full lookup cache does not yet support partitioned tables.");
             checkState(
                     !tableInfo.getTableConfig().getKvTTL().isPresent(),
                     "Full lookup cache does not support row-level TTL.");
@@ -131,24 +155,24 @@ final class FullCacheLookupRuntime implements AutoCloseable {
             Set<Integer> ownedBuckets =
                     new FullCacheBucketAssignment(numBuckets)
                             .ownedBuckets(subtaskIndex, parallelism);
-            cacheStore = new RocksDBLookupStore(createCacheDirectory(subtaskIndex));
-            logScanner = table.newScan().createLogScanner();
+            cacheStore = new RocksDBLookupStore(createCacheDirectory(subtaskIndex), cacheOptions);
+            logScanner = scannerFactory.apply(table);
 
             metricGroup.gauge("ready", () -> ready ? 1 : 0);
             metricGroup.gauge("ownedBuckets", ownedBuckets::size);
             metricGroup.gauge("snapshotRows", () -> snapshotRows);
             metricGroup.gauge("bootstrapDurationMs", () -> bootstrapDurationMs);
-            metricGroup.gauge("rocksdbDiskBytes", this::diskSizeBytes);
+            metricGroup.gauge("rocksdbDiskBytes", () -> storeSizeBytes(false));
+            metricGroup.gauge("rocksdbEstimatedMemoryBytes", () -> storeSizeBytes(true));
+            metricGroup.gauge("workerFailed", () -> workerFailure == null ? 0 : 1);
 
             startWorker(
-                    new FullCacheBootstrapper(
+                    new FullCacheLoader(
                             connection.getAdmin(),
                             flussConfig.get(ConfigOptions.CLIENT_SCANNER_KV_BATCH_STRATEGY),
                             table,
                             tableInfo,
-                            ownedBuckets,
-                            primaryKeyEncoder,
-                            rowSerializer));
+                            ownedBuckets));
             LOG.info(
                     "Full lookup cache for {} opened with buckets {}, bootstrapping in background.",
                     tablePath,
@@ -160,12 +184,20 @@ final class FullCacheLookupRuntime implements AutoCloseable {
         }
     }
 
-    /** Reads a complete lookup result under the cache lock. */
-    List<byte[]> lookup(byte[] key, boolean prefixLookup) throws RocksDBException {
+    /**
+     * Reads a complete lookup result after bootstrap, under the cache lock.
+     *
+     * <p>A null key represents a SQL lookup containing null and returns no matches. It still checks
+     * the cache state so a stream of null keys cannot hide a failed worker.
+     */
+    List<byte[]> lookup(@Nullable byte[] key, boolean prefixLookup) throws RocksDBException {
         awaitReady();
         rwLock.readLock().lock();
         try {
             checkReadable();
+            if (key == null) {
+                return Collections.emptyList();
+            }
             if (prefixLookup) {
                 return cacheStore.prefixLookup(key);
             }
@@ -176,8 +208,8 @@ final class FullCacheLookupRuntime implements AutoCloseable {
         }
     }
 
-    /** Waits for bootstrap and rejects failed or closed caches, including for null-key lookups. */
-    void awaitReady() {
+    /** Waits until bootstrap completes, the worker fails, or the cache closes. */
+    private void awaitReady() {
         try {
             bootstrapReady.await();
         } catch (InterruptedException e) {
@@ -185,27 +217,33 @@ final class FullCacheLookupRuntime implements AutoCloseable {
             throw new RuntimeException(
                     "Interrupted while waiting for the full lookup cache to be ready.", e);
         }
-        checkReadable();
     }
 
     private void checkReadable() {
-        Throwable failure = workerFailure;
-        if (failure != null) {
-            throw new RuntimeException("Full-cache worker failed; refusing stale lookup.", failure);
+        synchronized (stateLock) {
+            Throwable failure = workerFailure;
+            if (failure != null) {
+                throw new RuntimeException(
+                        "Full-cache worker failed; lookup cache is unavailable.", failure);
+            }
+            checkState(ready && !closed, "Full lookup cache is not ready.");
         }
-        checkState(ready && !closed.get(), "Full lookup cache is not ready.");
     }
 
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
-            return;
+        synchronized (stateLock) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            ready = false;
+            bootstrapReady.countDown();
         }
-        ready = false;
-        // Unblock any lookup that is still waiting for the snapshot phase.
-        bootstrapReady.countDown();
-        if (logScanner != null) {
-            logScanner.wakeup();
+        // Cancellation must not wait for the cache lock or hold the state lock.
+        LogScanner scanner = logScanner;
+        if (scanner != null) {
+            scanner.wakeup();
         }
         if (workerThread != null) {
             workerThread.interrupt();
@@ -236,11 +274,14 @@ final class FullCacheLookupRuntime implements AutoCloseable {
         }
     }
 
-    private long diskSizeBytes() {
+    private long storeSizeBytes(boolean memory) {
         rwLock.readLock().lock();
         try {
             // Reporters may retain the gauge after close. Do not access a released native handle.
-            return closed.get() ? 0L : cacheStore.diskSizeBytes();
+            if (closed) {
+                return 0L;
+            }
+            return memory ? cacheStore.estimatedMemoryBytes() : cacheStore.diskSizeBytes();
         } catch (RocksDBException e) {
             LOG.warn("Failed to read full lookup cache size for {}.", tablePath, e);
             return 0L;
@@ -249,9 +290,8 @@ final class FullCacheLookupRuntime implements AutoCloseable {
         }
     }
 
-    private void startWorker(FullCacheBootstrapper bootstrapper) {
-        workerThread =
-                new Thread(() -> runWorker(bootstrapper), "fluss-full-cache-worker-" + tablePath);
+    private void startWorker(FullCacheLoader loader) {
+        workerThread = new Thread(() -> runWorker(loader), "fluss-full-cache-worker-" + tablePath);
         workerThread.setDaemon(true);
         workerThread.start();
     }
@@ -260,46 +300,56 @@ final class FullCacheLookupRuntime implements AutoCloseable {
      * Bootstraps the cache from KV snapshots and then keeps it up to date by consuming the
      * changelog of all owned buckets. Runs on the background worker thread.
      */
-    private void runWorker(FullCacheBootstrapper bootstrapper) {
+    private void runWorker(FullCacheLoader loader) {
         try {
             long startNanos = System.nanoTime();
             // Load the snapshot. No lock is needed, lookups are blocked on the latch.
-            FullCacheBootstrapper.Result result = bootstrapper.run(cacheStore::put);
+            FullCacheLoader.Result result = loader.runSnapshot(this::putRow);
             snapshotRows = result.getSnapshotRows();
 
             // Apply CDC to the same store before serving lookups. Reuse the scanner afterwards;
             // a poll may already have applied records beyond the fixed readiness targets.
-            bootstrapper.replayChangelog(
+            loader.replayChangelog(
                     logScanner, result.getBucketSnapshotOffsets(), this::writeLogRecords);
             bootstrapDurationMs = (System.nanoTime() - startNanos) / 1_000_000L;
-            if (closed.get()) {
+            if (!completeBootstrap()) {
                 return;
             }
-            ready = true;
-            bootstrapReady.countDown();
             LOG.info(
                     "Full lookup cache for {} is ready in {} ms with {} rows.",
                     tablePath,
                     bootstrapDurationMs,
                     snapshotRows);
 
-            // Continuously consume the changelog.
-            while (!closed.get()) {
-                ScanRecords records = logScanner.poll(LOG_POLL_TIMEOUT);
-                if (records.hasProgress()) {
-                    applyLogRecords(records);
-                }
-            }
+            loader.consumeChangelog(logScanner, this::applyLogRecords, () -> closed);
         } catch (Throwable t) {
-            if (!closed.get()) {
-                workerFailure = t;
-                ready = false;
-                LOG.error("Full-cache worker for {} failed.", tablePath, t);
+            failWorker(t);
+        }
+    }
+
+    /** Publishes bootstrap completion only while the cache is neither closed nor failed. */
+    @VisibleForTesting
+    boolean completeBootstrap() {
+        synchronized (stateLock) {
+            if (closed || workerFailure != null) {
+                return false;
             }
-            // Wake up lookups so they can observe the failure (or the closure) instead of
-            // blocking forever.
+            ready = true;
+            bootstrapReady.countDown();
+            return true;
+        }
+    }
+
+    private void failWorker(Throwable failure) {
+        synchronized (stateLock) {
+            if (closed || workerFailure != null) {
+                return;
+            }
+            workerFailure = failure;
+            ready = false;
             bootstrapReady.countDown();
         }
+        LOG.error("Full-cache worker for {} failed.", tablePath, failure);
     }
 
     /** Applies a batch, publishing any failure before readers can acquire the lock. */
@@ -310,8 +360,7 @@ final class FullCacheLookupRuntime implements AutoCloseable {
             checkReadable();
             writeLogRecords(records);
         } catch (Throwable t) {
-            workerFailure = t;
-            ready = false;
+            failWorker(t);
             throw t;
         } finally {
             rwLock.writeLock().unlock();
@@ -323,8 +372,7 @@ final class FullCacheLookupRuntime implements AutoCloseable {
             for (ScanRecord record : records.records(bucket)) {
                 ChangeType changeType = record.getChangeType();
                 if (changeType == ChangeType.INSERT || changeType == ChangeType.UPDATE_AFTER) {
-                    byte[] key = primaryKeyEncoder.encodeKey(record.getRow());
-                    cacheStore.put(key, serializeRow(record.getRow(), rowSerializer));
+                    putRow(record.getRow());
                 } else if (changeType == ChangeType.DELETE) {
                     cacheStore.delete(primaryKeyEncoder.encodeKey(record.getRow()));
                 } else if (changeType != ChangeType.UPDATE_BEFORE) {
@@ -335,6 +383,14 @@ final class FullCacheLookupRuntime implements AutoCloseable {
                 }
             }
         }
+    }
+
+    private void putRow(InternalRow row) throws RocksDBException {
+        byte[] key = primaryKeyEncoder.encodeKey(row);
+        BinaryRow binaryRow = rowSerializer.toBinaryRow(row);
+        byte[] value = new byte[binaryRow.getSizeInBytes()];
+        binaryRow.copyTo(value, 0);
+        cacheStore.put(key, value);
     }
 
     private File createCacheDirectory(int subtaskIndex) throws IOException {
@@ -350,12 +406,5 @@ final class FullCacheLookupRuntime implements AutoCloseable {
                         + '-'
                         + System.nanoTime();
         return new File(root, name);
-    }
-
-    private static byte[] serializeRow(InternalRow row, RowSerializer serializer) {
-        BinaryRow binaryRow = serializer.toBinaryRow(row);
-        byte[] value = new byte[binaryRow.getSizeInBytes()];
-        binaryRow.copyTo(value, 0);
-        return value;
     }
 }

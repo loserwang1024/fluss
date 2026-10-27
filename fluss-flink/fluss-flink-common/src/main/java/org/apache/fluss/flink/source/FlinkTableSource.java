@@ -178,6 +178,7 @@ public class FlinkTableSource
     private final Map<String, String> tableOptions;
 
     @Nullable private LakeSource<LakeSplit> lakeSource;
+    @Nullable private List<ResolvedExpression> deferredLakeFilters;
     @Nullable private Predicate logRecordBatchFilter;
 
     /** Watermark strategy that is pushed down by the Flink optimizer. */
@@ -361,7 +362,9 @@ public class FlinkTableSource
         this.leaseContext = leaseContext;
         this.mergeEngineType = mergeEngineType;
         this.tableOptions = tableOptions;
-        if (isDataLakeEnabled) {
+        // A FULL lookup reads Fluss snapshots and logs, without requiring a lake reader plugin.
+        // Defer creating the lake source until this instance is actually used for a full scan.
+        if (isDataLakeEnabled && lookupCacheType != LookupOptions.LookupCacheType.FULL) {
             this.lakeSource =
                     checkNotNull(
                             createLakeSource(tablePath, tableOptions),
@@ -406,6 +409,10 @@ public class FlinkTableSource
         this.partitionFilters = source.partitionFilters;
         this.tableOptions = new HashMap<>(source.tableOptions);
         this.lakeSource = source.lakeSource == null ? null : source.lakeSource.copy();
+        this.deferredLakeFilters =
+                source.deferredLakeFilters == null
+                        ? null
+                        : new ArrayList<>(source.deferredLakeFilters);
         this.logRecordBatchFilter = source.logRecordBatchFilter;
         this.watermarkStrategy = source.watermarkStrategy;
     }
@@ -530,9 +537,10 @@ public class FlinkTableSource
                 break;
             case FULL:
                 offsetsInitializer = OffsetsInitializer.full();
-                // when it's full mode and lake source is not null,
-                // enable lake source as the historical data
-                enableLakeSource = lakeSource != null;
+                enableLakeSource = isDataLakeEnabled;
+                if (enableLakeSource) {
+                    initializeLakeSource();
+                }
                 break;
             case TIMESTAMP:
                 offsetsInitializer =
@@ -608,6 +616,27 @@ public class FlinkTableSource
         }
     }
 
+    private void initializeLakeSource() {
+        if (lakeSource != null) {
+            return;
+        }
+        lakeSource =
+                checkNotNull(
+                        createLakeSource(tablePath, tableOptions),
+                        "LakeSource must not be null if enable datalake");
+        if (projectedFields != null) {
+            lakeSource.withProject(
+                    Arrays.stream(projectedFields)
+                            .mapToObj(field -> new int[] {field})
+                            .toArray(int[][]::new));
+        }
+        if (deferredLakeFilters != null) {
+            // The planner kept these as remaining filters; applying them in the lake is also safe.
+            pushdownLakeFilters(deferredLakeFilters, new ArrayList<>());
+            deferredLakeFilters = null;
+        }
+    }
+
     /** Creates the stopping offsets initializer from the configured bounded options. */
     private OffsetsInitializer createStoppingOffsetsInitializer() {
         if (boundedOptions.getBoundedMode() != FlinkConnectorOptions.ScanBoundedMode.UNBOUNDED) {
@@ -675,7 +704,8 @@ public class FlinkTableSource
                             tableOutputType,
                             lookupNormalizer,
                             projectedFields,
-                            numBuckets));
+                            numBuckets,
+                            org.apache.flink.configuration.Configuration.fromMap(tableOptions)));
         }
         this.lookupInputPartitioner = createLookupInputPartitioner(lookupNormalizer);
         if (lookupAsync) {
@@ -714,17 +744,20 @@ public class FlinkTableSource
                 || primaryKeyIndexes.length == 0
                 || bucketKeyIndexes.length == 0
                 || partitionKeyIndexes.length != 0
-                || isDataLakeEnabled
                 || tableConfig.getKvTTL().isPresent()
                 || insertIfNotExists) {
             throw new UnsupportedOperationException(
-                    "Full lookup cache requires a streaming, non-partitioned primary key table "
-                            + "with bucket keys, without datalake, row TTL or lookup.insert-if-not-exists.");
+                    "Bucket-sharded full lookup cache requires a streaming, non-partitioned primary key table "
+                            + "with bucket keys, without row TTL or lookup.insert-if-not-exists. "
+                            + "Partitioned tables are not yet supported: dynamic partition discovery, "
+                            + "bootstrap and removal require additional lifecycle management.");
         }
         if (!preferCustomShuffle(context)) {
             throw new UnsupportedOperationException(
-                    "Full lookup cache requires planner custom bucket shuffle "
-                            + "(preferCustomShuffle=true); without it, local cache routing is unsafe.");
+                    "Bucket-sharded full lookup cache requires custom bucket shuffle "
+                            + "(preferCustomShuffle=true). Each subtask caches only its assigned buckets, "
+                            + "so enable LOOKUP('table' = '<alias>', 'shuffle' = 'true') "
+                            + "to route each lookup to a subtask holding its bucket.");
         }
     }
 
@@ -878,6 +911,9 @@ public class FlinkTableSource
             // Lake pushdown only contributes extra accepted filters; see
             // pushdownLakeFilters(...) for why remainingFilters must stay unchanged.
             pushdownLakeFilters(filters, acceptedFilters);
+        } else if (isDataLakeEnabled) {
+            // Projection and filters may be pushed before the planner chooses lookup versus scan.
+            deferredLakeFilters = new ArrayList<>(filters);
         }
 
         // FLINK-38635 We cannot determine whether this source will ultimately be used as a

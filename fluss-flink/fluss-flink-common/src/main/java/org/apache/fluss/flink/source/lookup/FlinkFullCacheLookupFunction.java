@@ -17,6 +17,7 @@
 
 package org.apache.fluss.flink.source.lookup;
 
+import org.apache.fluss.annotation.Internal;
 import org.apache.fluss.client.lookup.LookupType;
 import org.apache.fluss.config.Configuration;
 import org.apache.fluss.flink.adapter.RuntimeContextAdapter;
@@ -34,6 +35,7 @@ import org.apache.fluss.row.encode.KeyEncoder;
 import org.apache.fluss.types.DataType;
 import org.apache.fluss.utils.IOUtils;
 
+import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.functions.FunctionContext;
 import org.apache.flink.table.functions.LookupFunction;
@@ -44,15 +46,16 @@ import javax.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 
 /**
- * Converts Flink lookup keys and results for a continuously maintained local full cache.
+ * Converts Flink lookup keys and results for a continuously maintained local bucket-sharded full
+ * cache.
  *
- * <p>{@link FullCacheLookupRuntime} owns bootstrap, changelog consumption and the cache lifecycle.
+ * <p>{@link FullCacheLookupTable} owns bootstrap, changelog consumption and the cache lifecycle.
  * Opening the function starts bootstrap in the background; lookups wait for the snapshot to load.
  */
+@Internal
 public class FlinkFullCacheLookupFunction extends LookupFunction {
 
     private static final long serialVersionUID = 1L;
@@ -63,8 +66,9 @@ public class FlinkFullCacheLookupFunction extends LookupFunction {
     private final LookupNormalizer lookupNormalizer;
     @Nullable private final int[] projection;
     private final int numBuckets;
+    private final FullCacheLookupOptions cacheOptions;
 
-    private transient FullCacheLookupRuntime cacheRuntime;
+    private transient FullCacheLookupTable lookupTable;
     private transient KeyEncoder lookupKeyEncoder;
     private transient RowDecoder rowDecoder;
     private transient FlinkAsFlussRow lookupRow;
@@ -82,6 +86,7 @@ public class FlinkFullCacheLookupFunction extends LookupFunction {
      * @param projection the projection pushed down by Flink, or {@code null} when no field is
      *     pruned
      * @param numBuckets the bucket count of the lookup table the plan was created for
+     * @param lookupOptions connector options for local RocksDB resources
      */
     public FlinkFullCacheLookupFunction(
             Configuration flussConfig,
@@ -89,21 +94,23 @@ public class FlinkFullCacheLookupFunction extends LookupFunction {
             RowType flinkRowType,
             LookupNormalizer lookupNormalizer,
             @Nullable int[] projection,
-            int numBuckets) {
+            int numBuckets,
+            ReadableConfig lookupOptions) {
         this.flussConfig = flussConfig;
         this.tablePath = tablePath;
         this.flinkRowType = flinkRowType;
         this.lookupNormalizer = lookupNormalizer;
         this.projection = projection;
         this.numBuckets = numBuckets;
+        this.cacheOptions = new FullCacheLookupOptions(lookupOptions);
     }
 
     @Override
     public void open(FunctionContext context) throws Exception {
-        cacheRuntime = new FullCacheLookupRuntime(flussConfig, tablePath, numBuckets);
+        lookupTable = new FullCacheLookupTable(flussConfig, tablePath, numBuckets, cacheOptions);
         try {
             TableInfo tableInfo =
-                    cacheRuntime.open(
+                    lookupTable.open(
                             RuntimeContextAdapter.getIndexOfThisSubtask(context),
                             RuntimeContextAdapter.getNumberOfParallelSubtasks(context),
                             context.getMetricGroup().addGroup("fluss").addGroup("fullCache"));
@@ -139,21 +146,21 @@ public class FlinkFullCacheLookupFunction extends LookupFunction {
 
     @Override
     public Collection<RowData> lookup(RowData keyRow) {
-        cacheRuntime.awaitReady();
-        if (containsNull(keyRow)) {
-            return Collections.emptyList();
-        }
         try {
-            RowData normalizedKey = lookupNormalizer.normalizeLookupKey(keyRow);
-            byte[] lookupKey = lookupKeyEncoder.encodeKey(lookupRow.replace(normalizedKey));
-            RemainingFilter remainingFilter = lookupNormalizer.createRemainingFilter(keyRow);
+            byte[] lookupKey = null;
+            RemainingFilter remainingFilter = null;
+            if (!containsNull(keyRow)) {
+                RowData normalizedKey = lookupNormalizer.normalizeLookupKey(keyRow);
+                lookupKey = lookupKeyEncoder.encodeKey(lookupRow.replace(normalizedKey));
+                remainingFilter = lookupNormalizer.createRemainingFilter(keyRow);
+            }
             LookupType lookupType = lookupNormalizer.getLookupType();
             if (lookupType != LookupType.LOOKUP && lookupType != LookupType.PREFIX_LOOKUP) {
                 throw new IllegalStateException(
                         "Unsupported full-cache lookup type: " + lookupType);
             }
             List<byte[]> values =
-                    cacheRuntime.lookup(lookupKey, lookupType == LookupType.PREFIX_LOOKUP);
+                    lookupTable.lookup(lookupKey, lookupType == LookupType.PREFIX_LOOKUP);
             List<RowData> results = new ArrayList<>(values.size());
             for (byte[] value : values) {
                 RowData outputRow = toOutputRow(value);
@@ -169,7 +176,7 @@ public class FlinkFullCacheLookupFunction extends LookupFunction {
 
     @Override
     public void close() {
-        IOUtils.closeQuietly(cacheRuntime);
+        IOUtils.closeQuietly(lookupTable);
     }
 
     /** Decodes a cached value into the projected output row. */

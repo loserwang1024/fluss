@@ -46,6 +46,7 @@ import org.apache.flink.table.catalog.UniqueConstraint;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.LookupTableSource;
+import org.apache.flink.table.connector.source.ScanTableSource;
 import org.apache.flink.table.connector.source.lookup.AsyncLookupFunctionProvider;
 import org.apache.flink.table.connector.source.lookup.LookupFunctionProvider;
 import org.apache.flink.table.connector.source.lookup.cache.DefaultLookupCache;
@@ -73,6 +74,7 @@ import static org.apache.fluss.flink.FlinkConnectorOptions.BUCKET_KEY;
 import static org.apache.fluss.flink.FlinkConnectorOptions.BUCKET_NUMBER;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /** Test for {@link FlinkTableFactory}. */
 @MultiVersionTest
@@ -332,6 +334,42 @@ abstract class FlinkTableFactoryTest {
                     .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessageContaining("shuffle");
         }
+    }
+
+    @Test
+    void testLookupFullCacheAcceptsNonPartitionedLakeTable() {
+        Map<String, String> properties = getBasicOptionsWithBucketKey();
+        properties.put("lookup.cache", "FULL");
+        properties.put("table.datalake.enabled", "true");
+        properties.put("table.datalake.format", "paimon");
+        properties.put("lookup.full-cache.rocksdb.block-cache-size", "16 mb");
+        FlinkTableSource original = createFullCacheTableSource(createBasicSchema(), properties);
+        original.applyProjection(
+                new int[][] {{0}, {2}},
+                DataTypes.ROW(
+                        DataTypes.FIELD("first", DataTypes.STRING().notNull()),
+                        DataTypes.FIELD("third", DataTypes.STRING().notNull())));
+        original.applyFilters(Collections.emptyList());
+        FlinkTableSource source = (FlinkTableSource) original.copy();
+        if (supportsLookupCustomShuffle()) {
+            assertThat(
+                            source.getLookupRuntimeProvider(
+                                    createLookupContext(new int[][] {{0}, {1}}, true)))
+                    .isInstanceOf(LookupFunctionProvider.class);
+        } else {
+            assertThatThrownBy(
+                            () ->
+                                    source.getLookupRuntimeProvider(
+                                            createLookupContext(new int[][] {{0}, {1}}, true)))
+                    .hasMessageContaining("shuffle");
+        }
+        // A full scan must still create the lake reader. The test plugin does not implement it.
+        assertThatThrownBy(
+                        () ->
+                                source.getScanRuntimeProvider(
+                                        mock(ScanTableSource.ScanContext.class)))
+                .isInstanceOf(UnsupportedOperationException.class)
+                .hasMessageContaining("paimon");
     }
 
     @Test

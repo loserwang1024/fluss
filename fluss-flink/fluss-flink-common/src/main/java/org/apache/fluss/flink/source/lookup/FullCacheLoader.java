@@ -32,10 +32,7 @@ import org.apache.fluss.config.KvBatchStrategy;
 import org.apache.fluss.exception.UnsupportedVersionException;
 import org.apache.fluss.metadata.TableBucket;
 import org.apache.fluss.metadata.TableInfo;
-import org.apache.fluss.row.BinaryRow;
 import org.apache.fluss.row.InternalRow;
-import org.apache.fluss.row.encode.KeyEncoder;
-import org.apache.fluss.row.serializer.RowSerializer;
 import org.apache.fluss.utils.CloseableIterator;
 import org.apache.fluss.utils.ExceptionUtils;
 import org.apache.fluss.utils.IOUtils;
@@ -54,25 +51,28 @@ import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 import static org.apache.fluss.utils.Preconditions.checkNotNull;
 import static org.apache.fluss.utils.Preconditions.checkState;
 
 /**
- * Orchestrates the snapshot phase of the full lookup cache bootstrap.
+ * Loads snapshots and changelog records for the full lookup cache.
  *
  * <p>Loads either remote SST snapshots or server-side KV scans into the local cache, then replays
- * changelog records directly into that cache up to fixed per-bucket offsets. No in-memory changelog
- * merge is needed. The caller must keep lookups blocked until replay completes and reuse the log
- * scanner for continuous consumption so records polled beyond the targets are not lost.
+ * changelog records directly into that cache up to fixed per-bucket offsets before continuously
+ * consuming updates. No in-memory changelog merge is needed. The caller must keep lookups blocked
+ * until replay completes and reuse the log scanner for continuous consumption so records polled
+ * beyond the targets are not lost. Cache synchronization, readiness, and resource lifecycle are
+ * managed by the caller.
  *
- * <p>This class is <b>not thread-safe</b>; a single calling thread must own the bootstrap.
+ * <p>This class is <b>not thread-safe</b>; a single calling thread must own the loading process.
  */
 @Internal
 @NotThreadSafe
-final class FullCacheBootstrapper {
+final class FullCacheLoader {
 
-    private static final Logger LOG = LoggerFactory.getLogger(FullCacheBootstrapper.class);
+    private static final Logger LOG = LoggerFactory.getLogger(FullCacheLoader.class);
     private static final Duration SCAN_POLL_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration LOG_POLL_TIMEOUT = Duration.ofSeconds(1);
     private static final Duration SNAPSHOT_LEASE_DURATION = Duration.ofDays(1);
@@ -82,53 +82,114 @@ final class FullCacheBootstrapper {
     private final Table table;
     private final TableInfo tableInfo;
     private final Set<Integer> ownedBuckets;
-    private final KeyEncoder primaryKeyEncoder;
-    private final RowSerializer rowSerializer;
     @Nullable private KvSnapshotLease snapshotLease;
     private long nextLeaseRenewalNanos;
 
-    FullCacheBootstrapper(
+    FullCacheLoader(
             Admin admin,
             KvBatchStrategy strategy,
             Table table,
             TableInfo tableInfo,
-            Set<Integer> ownedBuckets,
-            KeyEncoder primaryKeyEncoder,
-            RowSerializer rowSerializer) {
+            Set<Integer> ownedBuckets) {
         this.admin = checkNotNull(admin, "admin must not be null.");
         this.strategy = checkNotNull(strategy, "strategy must not be null.");
         this.table = checkNotNull(table, "table must not be null.");
         this.tableInfo = checkNotNull(tableInfo, "tableInfo must not be null.");
         this.ownedBuckets = checkNotNull(ownedBuckets, "ownedBuckets must not be null.");
-        this.primaryKeyEncoder =
-                checkNotNull(primaryKeyEncoder, "primaryKeyEncoder must not be null.");
-        this.rowSerializer = checkNotNull(rowSerializer, "rowSerializer must not be null.");
     }
 
     /**
-     * Scans all owned buckets' KV snapshots and writes rows via the sink. Blocks until all buckets
-     * are fully scanned.
+     * Scans all owned buckets' KV snapshots and passes rows to the callback. Blocks until all
+     * buckets are fully scanned.
      *
-     * @param snapshotSink callback that receives encoded (key, value) pairs
-     * @return result with row count, duration, and per-bucket snapshot offsets
+     * @param snapshotConsumer callback that synchronously consumes each snapshot row
+     * @return result with row count and per-bucket snapshot offsets
      * @throws Exception if any bucket scan fails
      */
-    Result run(RowSink snapshotSink) throws Exception {
-        checkNotNull(snapshotSink, "snapshotSink must not be null.");
-        long startNanos = System.nanoTime();
+    Result runSnapshot(SnapshotRowConsumer snapshotConsumer) throws Exception {
+        checkNotNull(snapshotConsumer, "snapshotConsumer must not be null.");
         long snapshotRows;
         Map<Integer, Long> bucketSnapshotOffsets = new HashMap<>();
         if (strategy == KvBatchStrategy.SNAPSHOT_MERGE) {
-            snapshotRows = loadSnapshotFiles(snapshotSink, bucketSnapshotOffsets);
+            snapshotRows = loadSnapshotFiles(snapshotConsumer, bucketSnapshotOffsets);
         } else {
-            snapshotRows = scanServerSnapshots(snapshotSink, bucketSnapshotOffsets);
+            snapshotRows = scanServerSnapshots(snapshotConsumer, bucketSnapshotOffsets);
         }
-        long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
-        return new Result(snapshotRows, durationMs, bucketSnapshotOffsets);
+        return new Result(snapshotRows, bucketSnapshotOffsets);
     }
 
-    private long scanServerSnapshots(RowSink snapshotSink, Map<Integer, Long> offsets)
+    /**
+     * Replays at least through the offsets captured after loading snapshots. Targets are fixed so
+     * continuous writes cannot keep moving the readiness barrier. Whole polled batches are applied,
+     * including records past a target, and the same scanner must then serve continuous consumption.
+     */
+    void replayChangelog(
+            LogScanner scanner,
+            Map<Integer, Long> snapshotOffsets,
+            ChangelogConsumer changelogConsumer)
             throws Exception {
+        Map<Integer, Long> targets =
+                new HashMap<>(
+                        admin.listOffsets(
+                                        tableInfo.getTablePath(),
+                                        ownedBuckets,
+                                        new OffsetSpec.LatestSpec())
+                                .all()
+                                .get());
+        for (Integer bucket : ownedBuckets) {
+            Long start = snapshotOffsets.get(bucket);
+            Long target = targets.get(bucket);
+            checkState(
+                    start != null && target != null,
+                    "Missing bootstrap offset for bucket %s.",
+                    bucket);
+            scanner.subscribe(bucket, start);
+            if (start >= target) {
+                targets.remove(bucket);
+            }
+        }
+        while (!targets.isEmpty()) {
+            checkInterrupted();
+            ScanRecords records = scanner.poll(LOG_POLL_TIMEOUT);
+            changelogConsumer.accept(records);
+            for (TableBucket bucket : records.buckets()) {
+                Long target = targets.get(bucket.getBucket());
+                if (target == null) {
+                    continue;
+                }
+                Long consumed = records.consumedUpToOffset(bucket);
+                if (consumed != null && consumed >= target) {
+                    targets.remove(bucket.getBucket());
+                    continue;
+                }
+                for (ScanRecord record : records.records(bucket)) {
+                    if (record.logOffset() >= target - 1) {
+                        targets.remove(bucket.getBucket());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Consumes changelog updates until the caller closes the cache. Transient fetch recovery is
+     * handled by the client scanner; any escaped failure is propagated to the caller.
+     */
+    void consumeChangelog(
+            LogScanner scanner, ChangelogConsumer changelogConsumer, BooleanSupplier isClosed)
+            throws Exception {
+        while (!isClosed.getAsBoolean()) {
+            ScanRecords records = scanner.poll(LOG_POLL_TIMEOUT);
+            if (records.hasProgress()) {
+                changelogConsumer.accept(records);
+            }
+        }
+    }
+
+    // ----------------------- internal methods -------------------------------
+    private long scanServerSnapshots(
+            SnapshotRowConsumer snapshotConsumer, Map<Integer, Long> offsets) throws Exception {
         long snapshotRows = 0L;
         for (Integer bucketId : ownedBuckets) {
             checkInterrupted();
@@ -142,7 +203,7 @@ final class FullCacheBootstrapper {
                         snapshotOffset.isPresent(),
                         "KV scanner for bucket %s did not return a snapshot log offset.",
                         bucketId);
-                snapshotRows += drainBatches(scanner, firstBatch, snapshotSink);
+                snapshotRows += drainBatches(scanner, firstBatch, snapshotConsumer);
                 offsets.put(bucketId, snapshotOffset.getAsLong());
             } finally {
                 IOUtils.closeQuietly(firstBatch);
@@ -152,7 +213,7 @@ final class FullCacheBootstrapper {
         return snapshotRows;
     }
 
-    private long loadSnapshotFiles(RowSink snapshotSink, Map<Integer, Long> offsets)
+    private long loadSnapshotFiles(SnapshotRowConsumer snapshotConsumer, Map<Integer, Long> offsets)
             throws Exception {
         KvSnapshots snapshots = admin.getLatestKvSnapshots(tableInfo.getTablePath()).get();
         checkState(
@@ -187,7 +248,9 @@ final class FullCacheBootstrapper {
                         table.newScan().createBatchScanner(bucket, snapshotId.getAsLong())) {
                     snapshotRows +=
                             drainBatches(
-                                    scanner, scanner.pollBatch(SCAN_POLL_TIMEOUT), snapshotSink);
+                                    scanner,
+                                    scanner.pollBatch(SCAN_POLL_TIMEOUT),
+                                    snapshotConsumer);
                 }
                 offsets.put(bucketId, offset.getAsLong());
             }
@@ -243,57 +306,6 @@ final class FullCacheBootstrapper {
         }
     }
 
-    /**
-     * Replays at least through the offsets captured after loading snapshots. Targets are fixed so
-     * continuous writes cannot keep moving the readiness barrier. Whole polled batches are applied,
-     * including records past a target, and the same scanner must then serve continuous consumption.
-     */
-    void replayChangelog(LogScanner scanner, Map<Integer, Long> snapshotOffsets, LogSink logSink)
-            throws Exception {
-        Map<Integer, Long> targets =
-                new HashMap<>(
-                        admin.listOffsets(
-                                        tableInfo.getTablePath(),
-                                        ownedBuckets,
-                                        new OffsetSpec.LatestSpec())
-                                .all()
-                                .get());
-        for (Integer bucket : ownedBuckets) {
-            Long start = snapshotOffsets.get(bucket);
-            Long target = targets.get(bucket);
-            checkState(
-                    start != null && target != null,
-                    "Missing bootstrap offset for bucket %s.",
-                    bucket);
-            scanner.subscribe(bucket, start);
-            if (start >= target) {
-                targets.remove(bucket);
-            }
-        }
-        while (!targets.isEmpty()) {
-            checkInterrupted();
-            ScanRecords records = scanner.poll(LOG_POLL_TIMEOUT);
-            logSink.accept(records);
-            for (TableBucket bucket : records.buckets()) {
-                Long target = targets.get(bucket.getBucket());
-                if (target == null) {
-                    continue;
-                }
-                Long consumed = records.consumedUpToOffset(bucket);
-                if (consumed != null && consumed >= target) {
-                    targets.remove(bucket.getBucket());
-                    continue;
-                }
-                for (ScanRecord record : records.records(bucket)) {
-                    if (record.logOffset() >= target - 1) {
-                        targets.remove(bucket.getBucket());
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     private static void checkInterrupted() throws InterruptedException {
         if (Thread.currentThread().isInterrupted()) {
             throw new InterruptedException("Full-cache bootstrap interrupted.");
@@ -334,7 +346,7 @@ final class FullCacheBootstrapper {
     private long drainBatches(
             BatchScanner scanner,
             @Nullable CloseableIterator<InternalRow> firstBatch,
-            RowSink snapshotSink)
+            SnapshotRowConsumer snapshotConsumer)
             throws Exception {
         long rowCount = 0L;
         CloseableIterator<InternalRow> batch = firstBatch;
@@ -346,7 +358,7 @@ final class FullCacheBootstrapper {
                     if (rowCount % 1024 == 0) {
                         renewSnapshotLease();
                     }
-                    putSnapshotRow(snapshotSink, batch.next());
+                    snapshotConsumer.accept(batch.next());
                     rowCount++;
                 }
             } finally {
@@ -357,47 +369,30 @@ final class FullCacheBootstrapper {
         return rowCount;
     }
 
-    /** Encodes one snapshot row and hands an independent key-value pair to the sink. */
-    private void putSnapshotRow(RowSink snapshotSink, InternalRow row) throws Exception {
-        byte[] key = primaryKeyEncoder.encodeKey(row);
-        BinaryRow binaryRow = rowSerializer.toBinaryRow(row);
-        byte[] value = new byte[binaryRow.getSizeInBytes()];
-        binaryRow.copyTo(value, 0);
-        snapshotSink.accept(key, value);
-    }
-
-    /** Callback that receives the encoded key-value pairs produced by the snapshot scan. */
+    /** Synchronously consumes snapshot rows before the scanner can reuse them. */
     @FunctionalInterface
-    interface RowSink {
+    interface SnapshotRowConsumer {
 
-        /**
-         * Writes one encoded key-value pair into the cache store.
-         *
-         * @param key the encoded primary key
-         * @param value the serialized row value
-         */
-        void accept(byte[] key, byte[] value) throws Exception;
+        /** Consumes the row without retaining it beyond this call. */
+        void accept(InternalRow row) throws Exception;
     }
 
     /** Applies changelog records directly to the local cache. */
     @FunctionalInterface
-    interface LogSink {
+    interface ChangelogConsumer {
 
         /** Applies a polled batch in order before reporting its consumed offsets. */
         void accept(ScanRecords records) throws Exception;
     }
 
-    /** Result of a completed bootstrap. */
+    /** Result of the completed snapshot loading phase. */
     static final class Result {
 
         private final long snapshotRows;
-        private final long durationMs;
         private final Map<Integer, Long> bucketSnapshotOffsets;
 
-        private Result(
-                long snapshotRows, long durationMs, Map<Integer, Long> bucketSnapshotOffsets) {
+        private Result(long snapshotRows, Map<Integer, Long> bucketSnapshotOffsets) {
             this.snapshotRows = snapshotRows;
-            this.durationMs = durationMs;
             this.bucketSnapshotOffsets =
                     Collections.unmodifiableMap(new HashMap<>(bucketSnapshotOffsets));
         }
@@ -405,11 +400,6 @@ final class FullCacheBootstrapper {
         /** Returns the total number of snapshot rows written to the cache. */
         public long getSnapshotRows() {
             return snapshotRows;
-        }
-
-        /** Returns the wall-clock duration of the snapshot bootstrap, in milliseconds. */
-        public long getDurationMs() {
-            return durationMs;
         }
 
         /**

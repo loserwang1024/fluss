@@ -22,16 +22,21 @@ import org.apache.fluss.rocksdb.RocksDBOperationUtils;
 import org.apache.fluss.utils.FileUtils;
 import org.apache.fluss.utils.IOUtils;
 
+import io.github.fluss_contrib.rocksdb.BlockBasedTableConfig;
+import io.github.fluss_contrib.rocksdb.BloomFilter;
 import io.github.fluss_contrib.rocksdb.ColumnFamilyDescriptor;
 import io.github.fluss_contrib.rocksdb.ColumnFamilyHandle;
 import io.github.fluss_contrib.rocksdb.ColumnFamilyOptions;
 import io.github.fluss_contrib.rocksdb.DBOptions;
+import io.github.fluss_contrib.rocksdb.LRUCache;
 import io.github.fluss_contrib.rocksdb.ReadOptions;
 import io.github.fluss_contrib.rocksdb.RocksDB;
 import io.github.fluss_contrib.rocksdb.RocksDBException;
 import io.github.fluss_contrib.rocksdb.RocksIterator;
 import io.github.fluss_contrib.rocksdb.Slice;
 import io.github.fluss_contrib.rocksdb.WriteOptions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
@@ -44,10 +49,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Local RocksDB-backed key-value store for the full lookup cache.
- *
- * <p>Uses a single column family. Snapshot rows and CDC changes are written sequentially (not
- * concurrently), so no overlay merge is needed.
+ * Local RocksDB-backed key-value store shared by all buckets assigned to a lookup subtask.
  *
  * <p>This class is <b>not thread-safe</b>. Callers must synchronize externally (e.g. via {@code
  * ReadWriteLock}).
@@ -55,52 +57,70 @@ import java.util.List;
 @NotThreadSafe
 final class RocksDBLookupStore implements AutoCloseable {
 
-    private final File dbDirectory;
-    private final DBOptions dbOptions;
-    private final ColumnFamilyOptions columnFamilyOptions;
-    private final WriteOptions writeOptions;
-    private final RocksDB rocksDB;
-    private final ColumnFamilyHandle defaultColumnFamilyHandle;
+    private static final Logger LOG = LoggerFactory.getLogger(RocksDBLookupStore.class);
 
-    RocksDBLookupStore(File dbDirectory) throws IOException {
+    private final File dbDirectory;
+    private final RocksDBResources resources;
+    private boolean closed;
+
+    RocksDBLookupStore(File dbDirectory, FullCacheLookupOptions options) throws IOException {
         this.dbDirectory = dbDirectory;
         if (!dbDirectory.mkdirs() && !dbDirectory.isDirectory()) {
             throw new IOException("Unable to create full cache directory " + dbDirectory);
         }
 
-        DBOptions openedDbOptions = null;
-        ColumnFamilyOptions openedColumnFamilyOptions = null;
-        WriteOptions openedWriteOptions = null;
-        RocksDB openedDb = null;
-        List<ColumnFamilyHandle> columnFamilyHandles = new ArrayList<>(1);
+        LOG.info("Opening bucket-sharded full lookup cache at {}.", dbDirectory.getAbsolutePath());
+        resources = openRocksDB(dbDirectory, options);
+    }
+
+    /** Creates the database and releases every allocated native resource if opening fails. */
+    private static RocksDBResources openRocksDB(File dbDirectory, FullCacheLookupOptions options)
+            throws IOException {
+        RocksDBResources resources = new RocksDBResources();
         try {
             RocksDB.loadLibrary();
-            openedDbOptions = new DBOptions().setCreateIfMissing(true);
-            openedColumnFamilyOptions = new ColumnFamilyOptions();
+            resources.dbOptions = new DBOptions();
+            resources
+                    .dbOptions
+                    .setCreateIfMissing(true)
+                    .setMaxBackgroundJobs(options.maxBackgroundJobs)
+                    .setMaxOpenFiles(options.maxOpenFiles);
+            resources.blockCache = new LRUCache(options.blockCacheSize, -1, false, 0.1);
+            resources.bloomFilter = new BloomFilter(10, false);
+            BlockBasedTableConfig tableConfig =
+                    new BlockBasedTableConfig()
+                            .setBlockCache(resources.blockCache)
+                            .setCacheIndexAndFilterBlocks(true)
+                            .setCacheIndexAndFilterBlocksWithHighPriority(true)
+                            .setPinL0FilterAndIndexBlocksInCache(true)
+                            .setFilterPolicy(resources.bloomFilter);
+            resources.columnFamilyOptions = new ColumnFamilyOptions();
+            resources
+                    .columnFamilyOptions
+                    .setWriteBufferSize(options.writeBufferSize)
+                    .setMaxWriteBufferNumber(options.writeBufferCount)
+                    .setTableFormatConfig(tableConfig);
             // The cache is rebuilt on startup, so writes do not need WAL recovery.
-            openedWriteOptions = new WriteOptions().setDisableWAL(true);
+            resources.writeOptions = new WriteOptions().setDisableWAL(true);
             List<ColumnFamilyDescriptor> columnFamilyDescriptors =
                     Collections.singletonList(
                             new ColumnFamilyDescriptor(
-                                    RocksDB.DEFAULT_COLUMN_FAMILY, openedColumnFamilyOptions));
-            openedDb =
+                                    RocksDB.DEFAULT_COLUMN_FAMILY, resources.columnFamilyOptions));
+            resources.rocksDB =
                     RocksDBOperationUtils.openDB(
                             dbDirectory.getAbsolutePath(),
                             columnFamilyDescriptors,
-                            columnFamilyHandles,
-                            openedDbOptions,
+                            resources.columnFamilyHandles,
+                            resources.dbOptions,
                             false);
-            defaultColumnFamilyHandle = columnFamilyHandles.get(0);
-            rocksDB = openedDb;
-            dbOptions = openedDbOptions;
-            columnFamilyOptions = openedColumnFamilyOptions;
-            writeOptions = openedWriteOptions;
+            resources.defaultColumnFamilyHandle = resources.columnFamilyHandles.get(0);
+            return resources;
         } catch (Throwable t) {
-            columnFamilyHandles.forEach(IOUtils::closeQuietly);
-            IOUtils.closeQuietly(openedDb);
-            IOUtils.closeQuietly(openedWriteOptions);
-            IOUtils.closeQuietly(openedColumnFamilyOptions);
-            IOUtils.closeQuietly(openedDbOptions);
+            resources.close();
+            LOG.warn(
+                    "Failed to open full lookup cache at {}; cleaning up.",
+                    dbDirectory.getAbsolutePath(),
+                    t);
             FileUtils.deleteDirectoryQuietly(dbDirectory);
             throw t;
         }
@@ -108,18 +128,19 @@ final class RocksDBLookupStore implements AutoCloseable {
 
     /** Writes or overwrites a key-value pair. */
     void put(byte[] key, byte[] value) throws RocksDBException {
-        rocksDB.put(defaultColumnFamilyHandle, writeOptions, key, value);
+        resources.rocksDB.put(
+                resources.defaultColumnFamilyHandle, resources.writeOptions, key, value);
     }
 
     /** Deletes a key. */
     void delete(byte[] key) throws RocksDBException {
-        rocksDB.delete(defaultColumnFamilyHandle, writeOptions, key);
+        resources.rocksDB.delete(resources.defaultColumnFamilyHandle, resources.writeOptions, key);
     }
 
     /** Point lookup. Returns null if the key does not exist. */
     @Nullable
     byte[] get(byte[] key) throws RocksDBException {
-        return rocksDB.get(defaultColumnFamilyHandle, key);
+        return resources.rocksDB.get(resources.defaultColumnFamilyHandle, key);
     }
 
     /**
@@ -136,7 +157,8 @@ final class RocksDBLookupStore implements AutoCloseable {
                 readOptions.setIterateUpperBound(upperBoundSlice);
             }
             try (RocksIterator iterator =
-                    rocksDB.newIterator(defaultColumnFamilyHandle, readOptions)) {
+                    resources.rocksDB.newIterator(
+                            resources.defaultColumnFamilyHandle, readOptions)) {
                 return readPrefix(iterator, prefixKey);
             }
         }
@@ -172,17 +194,56 @@ final class RocksDBLookupStore implements AutoCloseable {
 
     /** Returns the total SST file size from RocksDB metadata, excluding WAL and metadata files. */
     long diskSizeBytes() throws RocksDBException {
-        return rocksDB.getLongProperty("rocksdb.total-sst-files-size");
+        return resources.rocksDB.getLongProperty("rocksdb.total-sst-files-size");
+    }
+
+    /** Estimates native memtable, table-reader and block-cache memory, excluding other overhead. */
+    long estimatedMemoryBytes() throws RocksDBException {
+        return resources.rocksDB.getLongProperty("rocksdb.cur-size-all-mem-tables")
+                + resources.rocksDB.getLongProperty("rocksdb.estimate-table-readers-mem")
+                + resources.blockCache.getUsage();
     }
 
     /** Closes RocksDB and deletes the directory. */
     @Override
     public void close() {
-        IOUtils.closeQuietly(defaultColumnFamilyHandle);
-        IOUtils.closeQuietly(rocksDB);
-        IOUtils.closeQuietly(writeOptions);
-        IOUtils.closeQuietly(columnFamilyOptions);
-        IOUtils.closeQuietly(dbOptions);
+        if (closed) {
+            return;
+        }
+        closed = true;
+        LOG.info("Closing and removing full lookup cache at {}.", dbDirectory.getAbsolutePath());
+        resources.close();
         FileUtils.deleteDirectoryQuietly(dbDirectory);
+        if (dbDirectory.exists()) {
+            LOG.warn(
+                    "Full lookup cache directory could not be removed: {}.",
+                    dbDirectory.getAbsolutePath());
+        }
+    }
+
+    /**
+     * Native resources with the same lifetime as one database, also used during partial opening.
+     */
+    private static final class RocksDBResources implements AutoCloseable {
+
+        private final List<ColumnFamilyHandle> columnFamilyHandles = new ArrayList<>(1);
+        private LRUCache blockCache;
+        private BloomFilter bloomFilter;
+        private DBOptions dbOptions;
+        private ColumnFamilyOptions columnFamilyOptions;
+        private WriteOptions writeOptions;
+        private RocksDB rocksDB;
+        private ColumnFamilyHandle defaultColumnFamilyHandle;
+
+        @Override
+        public void close() {
+            columnFamilyHandles.forEach(IOUtils::closeQuietly);
+            IOUtils.closeQuietly(rocksDB);
+            IOUtils.closeQuietly(writeOptions);
+            IOUtils.closeQuietly(columnFamilyOptions);
+            IOUtils.closeQuietly(dbOptions);
+            IOUtils.closeQuietly(bloomFilter);
+            IOUtils.closeQuietly(blockCache);
+        }
     }
 }

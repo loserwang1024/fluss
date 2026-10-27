@@ -17,8 +17,12 @@
 
 package org.apache.fluss.flink.source.lookup;
 
+import org.apache.fluss.flink.FlinkConnectorOptions;
+
 import io.github.fluss_contrib.rocksdb.RocksDBException;
 import io.github.fluss_contrib.rocksdb.RocksIterator;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.MemorySize;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,7 +45,9 @@ class RocksDBLookupStoreTest {
     @Test
     void testPointAndPrefixReads() throws Exception {
         Path directory = tempDir.resolve("cache");
-        try (RocksDBLookupStore store = new RocksDBLookupStore(directory.toFile())) {
+        try (RocksDBLookupStore store =
+                new RocksDBLookupStore(
+                        directory.toFile(), new FullCacheLookupOptions(new Configuration()))) {
             store.put(new byte[] {1, 1}, new byte[] {10});
             store.put(new byte[] {1, 2}, new byte[] {20});
             store.put(new byte[] {2, 1}, new byte[] {30});
@@ -62,7 +68,10 @@ class RocksDBLookupStoreTest {
 
     @Test
     void testPrefixReadsWithUnsignedByteBounds() throws Exception {
-        try (RocksDBLookupStore store = new RocksDBLookupStore(tempDir.resolve("cache").toFile())) {
+        try (RocksDBLookupStore store =
+                new RocksDBLookupStore(
+                        tempDir.resolve("cache").toFile(),
+                        new FullCacheLookupOptions(new Configuration()))) {
             store.put(new byte[] {1, (byte) 0xff}, new byte[] {10});
             store.put(new byte[] {1, (byte) 0xff, 0}, new byte[] {20});
             store.put(new byte[] {2}, new byte[] {30});
@@ -87,12 +96,18 @@ class RocksDBLookupStoreTest {
         Path directory = Files.createDirectory(tempDir.resolve("broken-cache"));
         // An invalid CURRENT file forces RocksDB.open to fail after allocating native options.
         Files.write(directory.resolve("CURRENT"), "invalid".getBytes(StandardCharsets.UTF_8));
-        assertThatThrownBy(() -> new RocksDBLookupStore(directory.toFile()))
+        assertThatThrownBy(
+                        () ->
+                                new RocksDBLookupStore(
+                                        directory.toFile(),
+                                        new FullCacheLookupOptions(new Configuration())))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("Error while opening RocksDB");
         assertThat(directory).doesNotExist();
 
-        try (RocksDBLookupStore store = new RocksDBLookupStore(directory.toFile())) {
+        try (RocksDBLookupStore store =
+                new RocksDBLookupStore(
+                        directory.toFile(), new FullCacheLookupOptions(new Configuration()))) {
             store.put(new byte[] {1}, new byte[] {10});
             assertThat(store.get(new byte[] {1})).containsExactly((byte) 10);
         }
@@ -100,9 +115,37 @@ class RocksDBLookupStoreTest {
     }
 
     @Test
+    void testSmallWriteBuffersFlushAndReportNativeMemory() throws Exception {
+        Configuration options = new Configuration();
+        options.set(
+                FlinkConnectorOptions.LOOKUP_FULL_CACHE_WRITE_BUFFER_SIZE,
+                MemorySize.parse("64 kb"));
+        options.set(
+                FlinkConnectorOptions.LOOKUP_FULL_CACHE_BLOCK_CACHE_SIZE, MemorySize.parse("1 mb"));
+        options.set(FlinkConnectorOptions.LOOKUP_FULL_CACHE_MAX_OPEN_FILES, 32);
+        Path directory = tempDir.resolve("small-cache");
+        RocksDBLookupStore store =
+                new RocksDBLookupStore(directory.toFile(), new FullCacheLookupOptions(options));
+        try {
+            for (int i = 0; i < 512; i++) {
+                store.put(new byte[] {(byte) (i >> 8), (byte) i}, new byte[4096]);
+            }
+            assertThat(store.diskSizeBytes()).isGreaterThan(0L);
+            assertThat(store.estimatedMemoryBytes()).isGreaterThan(0L);
+            assertThat(store.get(new byte[] {1, 0})).hasSize(4096);
+        } finally {
+            store.close();
+        }
+        store.close();
+        assertThat(directory).doesNotExist();
+    }
+
+    @Test
     void testDiskSizeUsesSstFilesOnly() throws Exception {
         Path directory = tempDir.resolve("cache");
-        try (RocksDBLookupStore store = new RocksDBLookupStore(directory.toFile())) {
+        try (RocksDBLookupStore store =
+                new RocksDBLookupStore(
+                        directory.toFile(), new FullCacheLookupOptions(new Configuration()))) {
             Files.write(directory.resolve("unrelated-file"), new byte[1024]);
             assertThat(store.diskSizeBytes()).isZero();
         }
